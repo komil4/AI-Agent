@@ -612,8 +612,8 @@ class GitLabMCPServer:
     def _get_project_commits_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Получает коммиты проекта через инструмент"""
         try:
-            project_name = arguments.get('project_name')
-            project_id = arguments.get('project_id')
+            project_id = arguments.get('project_id') or arguments.get('id')
+            project_name = arguments.get('project_name') or arguments.get('name') or arguments.get('project')
             per_page = arguments.get('per_page', 5)
             author_email = arguments.get('author_email')
             
