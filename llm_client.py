@@ -215,6 +215,7 @@ class LLMClient:
         
         messages.append({"role": "system", "content": system_prompt})
         
+        
         # Сообщение пользователя
         #messages.append({"role": "user", "content": message})
         
