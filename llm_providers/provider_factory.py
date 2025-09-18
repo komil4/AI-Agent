@@ -3,7 +3,7 @@
 Фабрика для создания LLM провайдеров
 """
 
-from typing import Optional
+from typing import Optional, List
 from config.llm_config import LLMConfig, LLMProvider, llm_config_manager
 from llm_providers.base_provider import BaseLLMProvider
 from llm_providers.openai_provider import OpenAIProvider
@@ -42,7 +42,7 @@ class LLMProviderFactory:
         return cls.create_provider(default_provider)
     
     @classmethod
-    def get_available_providers(cls) -> list[LLMProvider]:
+    def get_available_providers(cls) -> List[LLMProvider]:
         """Возвращает список доступных провайдеров"""
         return llm_config_manager.get_available_providers()
     

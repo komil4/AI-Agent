@@ -4,7 +4,7 @@
 """
 
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from enum import Enum
 from dataclasses import dataclass
 
@@ -87,7 +87,7 @@ class LLMConfigManager:
         # Ollama конфигурация - всегда включаем по умолчанию
         ollama_config = providers_config.get('ollama', {})
         # Ollama включен по умолчанию, если не отключен явно
-        if ollama_config.get('enabled', False):
+        if ollama_config.get('enabled', True):
             self.configs[LLMProvider.OLLAMA] = LLMConfig(
                 provider=LLMProvider.OLLAMA,
                 model=ollama_config.get('model', os.getenv('OLLAMA_MODEL', 'llama3.1:8b')),
@@ -116,7 +116,7 @@ class LLMConfigManager:
         """Получает конфигурацию для провайдера"""
         return self.configs.get(provider)
     
-    def get_available_providers(self) -> list[LLMProvider]:
+    def get_available_providers(self) -> List[LLMProvider]:
         """Возвращает список доступных провайдеров"""
         return list(self.configs.keys())
     

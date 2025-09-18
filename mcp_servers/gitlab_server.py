@@ -102,7 +102,13 @@ class GitLabMCPServer:
             return "❌ GitLab не настроен. Проверьте переменные окружения."
         
         try:
-            from intent_analyzer import IntentType
+            # Временная заглушка для intent_analyzer
+            class IntentType:
+                GITLAB_PROJECTS = "gitlab_projects"
+                GITLAB_COMMITS = "gitlab_commits"
+                GITLAB_MY_COMMITS = "gitlab_my_commits"
+                GITLAB_TASK_COMMITS = "gitlab_task_commits"
+                GITLAB_MERGE = "gitlab_merge"
             
             # Обрабатываем на основе намерения
             if intent_result.intent == IntentType.GITLAB_PROJECTS:

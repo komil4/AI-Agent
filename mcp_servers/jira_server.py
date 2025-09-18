@@ -97,7 +97,13 @@ class JiraMCPServer:
             return "❌ Jira не настроен. Проверьте переменные окружения."
         
         try:
-            from intent_analyzer import IntentType
+            # Временная заглушка для intent_analyzer
+            class IntentType:
+                JIRA_CREATE = "jira_create"
+                JIRA_SEARCH = "jira_search"
+                JIRA_LIST = "jira_list"
+                JIRA_UPDATE = "jira_update"
+                JIRA_ANALYZE = "jira_analyze"
             
             # Обрабатываем на основе намерения
             if intent_result.intent == IntentType.JIRA_CREATE:

@@ -31,12 +31,101 @@ class MCPClient:
         self.config_manager = ConfigManager()
         self.sessions: Dict[str, ClientSession] = {}
         self.available_tools: Dict[str, List[Dict]] = {}
+        self.server_tools: Dict[str, List[Dict]] = {}
         self._load_config()
-        #self._define_tools()
+        self._define_tools()
     
     def _load_config(self):
         """Загружает конфигурацию MCP серверов"""
         self.mcp_config = self.config_manager.get_service_config('mcp_servers')
+    
+    def _define_tools(self):
+        """Определяет предопределенные инструменты для каждого сервера"""
+        self.server_tools = {
+            'jira': [
+                {
+                    "name": "create_issue",
+                    "description": "Создает новую задачу в Jira",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "summary": {"type": "string", "description": "Краткое описание задачи"},
+                            "description": {"type": "string", "description": "Подробное описание задачи"},
+                            "project_key": {"type": "string", "description": "Ключ проекта (например, TEST)"},
+                            "issue_type": {"type": "string", "description": "Тип задачи (Task, Bug, Story)"}
+                        },
+                        "required": ["summary", "project_key"]
+                    }
+                },
+                {
+                    "name": "search_issues",
+                    "description": "Ищет задачи в Jira по JQL запросу",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "jql": {"type": "string", "description": "JQL запрос для поиска"},
+                            "max_results": {"type": "integer", "description": "Максимальное количество результатов"}
+                        },
+                        "required": ["jql"]
+                    }
+                }
+            ],
+            'gitlab': [
+                {
+                    "name": "list_projects",
+                    "description": "Получает список проектов GitLab",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "search": {"type": "string", "description": "Поисковый запрос"},
+                            "per_page": {"type": "integer", "description": "Количество результатов на странице"}
+                        }
+                    }
+                },
+                {
+                    "name": "get_project_commits",
+                    "description": "Получает коммиты проекта",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "project_name": {"type": "string", "description": "Название проекта"},
+                            "per_page": {"type": "integer", "description": "Количество коммитов"},
+                            "author_email": {"type": "string", "description": "Email автора для фильтрации"}
+                        },
+                        "required": ["project_name"]
+                    }
+                }
+            ],
+            'confluence': [
+                {
+                    "name": "search_pages",
+                    "description": "Ищет страницы в Confluence",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Поисковый запрос"},
+                            "space_key": {"type": "string", "description": "Ключ пространства"},
+                            "limit": {"type": "integer", "description": "Максимальное количество результатов"}
+                        },
+                        "required": ["query"]
+                    }
+                },
+                {
+                    "name": "create_page",
+                    "description": "Создает новую страницу в Confluence",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string", "description": "Заголовок страницы"},
+                            "content": {"type": "string", "description": "Содержимое страницы"},
+                            "space_key": {"type": "string", "description": "Ключ пространства"},
+                            "parent_page_id": {"type": "string", "description": "ID родительской страницы"}
+                        },
+                        "required": ["title", "content", "space_key"]
+                    }
+                }
+            ]
+        }
     
     def _get_builtin_servers(self) -> Dict[str, Any]:
         """Получает экземпляры встроенных MCP серверов"""

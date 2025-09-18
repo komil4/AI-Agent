@@ -59,7 +59,7 @@ class AnthropicProvider(BaseLLMProvider):
         except Exception as e:
             raise Exception(f"Ошибка Anthropic API: {str(e)}")
     
-    async def generate_with_tools(self, messages: List[Dict[str, str]], tools: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
+    async def generate_with_tools(self, user_message: str, messages: List[Dict[str, str]], tools: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
         """Генерирует ответ с поддержкой инструментов"""
         try:
             params = self._get_model_params(**kwargs)

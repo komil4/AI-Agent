@@ -94,7 +94,11 @@ class AtlassianMCPServer:
             return "❌ Confluence не настроен. Проверьте переменные окружения."
         
         try:
-            from intent_analyzer import IntentType
+            # Временная заглушка для intent_analyzer
+            class IntentType:
+                CONFLUENCE_CREATE = "confluence_create"
+                CONFLUENCE_SEARCH = "confluence_search"
+                CONFLUENCE_LIST = "confluence_list"
             
             # Обрабатываем на основе намерения
             if intent_result.intent == IntentType.CONFLUENCE_CREATE:
