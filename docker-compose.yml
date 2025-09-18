@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  llm-server:
+    image: ollama/ollama:latest
+    container_name: llm-server
+    ports:
+      - "11434:11434"
+    volumes:
+      - /opt/ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    command: serve
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-server
+    ports:
+      - "6379:6379"
+    volumes:
+      - /opt/redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  redis_data:

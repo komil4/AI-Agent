@@ -1,0 +1,102 @@
+{
+  "active_directory": {
+    "server": "",
+    "domain": "",
+    "base_dn": "",
+    "service_user": "",
+    "service_password": "",
+    "enabled": false
+  },
+  "jira": {
+    "url": "",
+    "username": "",
+    "api_token": "",
+    "enabled": false
+  },
+  "atlassian": {
+    "url": "",
+    "username": "",
+    "api_token": "",
+    "enabled": false
+  },
+  "gitlab": {
+    "url": "",
+    "token": "",
+    "enabled": false
+  },
+  "llm": {
+    "provider": "ollama",
+    "base_url": "http://localhost:11434",
+    "model": "llama3.1:8b",
+    "timeout": 120,
+    "enabled": true,
+    "providers": {
+      "openai": {
+        "api_key": "",
+        "model": "gpt-4o-mini",
+        "base_url": "",
+        "temperature": 0.7,
+        "max_tokens": 4000,
+        "timeout": 30,
+        "enabled": false
+      },
+      "anthropic": {
+        "api_key": "",
+        "model": "claude-3-5-sonnet-20241022",
+        "base_url": "",
+        "temperature": 0.7,
+        "max_tokens": 4000,
+        "timeout": 30,
+        "enabled": false
+      },
+      "google": {
+        "api_key": "",
+        "model": "gemini-1.5-flash",
+        "base_url": "",
+        "temperature": 0.7,
+        "max_tokens": 4000,
+        "timeout": 30,
+        "enabled": false
+      },
+      "ollama": {
+        "base_url": "http://localhost:11434",
+        "model": "llama3.1:8b",
+        "temperature": 0.7,
+        "max_tokens": 4000,
+        "timeout": 30,
+        "enabled": true
+      },
+      "local": {
+        "base_url": "http://localhost:8000",
+        "model": "local",
+        "temperature": 0.7,
+        "max_tokens": 4000,
+        "timeout": 30,
+        "enabled": false
+      }
+    }
+  },
+  "redis": {
+    "url": "redis://localhost:6379",
+    "enabled": true
+  },
+  "jwt": {
+    "secret": "your-secret-key-here",
+    "algorithm": "HS256",
+    "expiration_hours": 24
+  },
+  "mcp_servers": {
+    "jira": {
+      "enabled": false
+    },
+    "gitlab": {
+      "enabled": false
+    },
+    "confluence": {
+      "enabled": false
+    },
+    "ldap": {
+      "enabled": false
+    }
+  }
+}

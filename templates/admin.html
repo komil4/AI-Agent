@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Админ-панель - AI Ассистент</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-dark: #122c34;
+            --primary-medium: #0b4f6c;
+            --primary-light: #2978a0;
+            --accent-color: #2978a0;
+            --text-light: #ffffff;
+            --text-dark: #122c34;
+            --bg-light: #f8f9fa;
+            --border-color: #dee2e6;
+        }
+        
+        body {
+            background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-medium) 50%, var(--primary-light) 100%);
+            min-height: 100vh;
+            color: var(--text-dark);
+        }
+        
+        .admin-header {
+            background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-medium) 100%);
+            color: var(--text-light);
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .main-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            margin: 20px;
+            padding: 30px;
+        }
+        
+        .config-card {
+            border: none;
+            border-radius: 20px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+            overflow: hidden;
+        }
+        
+        .config-card .card-header {
+            background: linear-gradient(135deg, var(--primary-medium) 0%, var(--primary-light) 100%);
+            color: var(--text-light);
+            border-radius: 0 !important;
+            border: none;
+            padding: 1.5rem;
+        }
+        .form-control {
+            border-radius: 12px;
+            border: 2px solid var(--border-color);
+            padding: 12px 15px;
+            transition: all 0.3s ease;
+        }
+        .form-control:focus {
+            border-color: var(--primary-light);
+            box-shadow: 0 0 0 0.2rem rgba(41, 120, 160, 0.25);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary-medium) 0%, var(--primary-light) 100%);
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-medium) 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(41, 120, 160, 0.3);
+        }
+        .btn-success {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+        }
+        .btn-warning {
+            background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .btn-warning:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+        }
+        .btn-danger {
+            background: linear-gradient(135deg, #dc3545 0%, #e83e8c 100%);
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-enabled {
+            background-color: #28a745;
+        }
+        .status-disabled {
+            background-color: #dc3545;
+        }
+        .loading {
+            display: none;
+        }
+        .admin-sidebar {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="admin-header">
+            <div class="container">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <h2><i class="fas fa-cogs"></i> Админ-панель</h2>
+                        <p class="mb-0">Управление настройками AI Ассистента</p>
+                    </div>
+                    <div class="col-auto">
+                        <a href="/" class="btn btn-outline-light">
+                            <i class="fas fa-arrow-left"></i> Назад к приложению
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+        <!-- Login Form (initially visible) -->
+        <div id="loginSection" class="row justify-content-center">
+            <div class="col-md-6 col-lg-4">
+                <div class="card config-card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-lock"></i> Вход в админ-панель</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="adminLoginForm">
+                            <div class="mb-3">
+                                <label for="adminUsername" class="form-label">Имя пользователя</label>
+                                <input type="text" class="form-control" id="adminUsername" value="admin" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="adminPassword" class="form-label">Пароль</label>
+                                <input type="password" class="form-control" id="adminPassword" required>
+                            </div>
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary" id="adminLoginBtn">
+                                    <span class="btn-text">
+                                        <i class="fas fa-sign-in-alt"></i> Войти
+                                    </span>
+                                    <span class="loading">
+                                        <i class="fas fa-spinner fa-spin"></i> Вход...
+                                    </span>
+                                </button>
+                            </div>
+                        </form>
+                        <div class="mt-3">
+                            <small class="text-muted">
+                                <i class="fas fa-info-circle"></i> 
+                                По умолчанию: admin / admin
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Panel (initially hidden) -->
+        <div id="adminPanel" style="display: none;">
+            <div class="row">
+                <!-- Sidebar -->
+                <div class="col-md-3">
+                    <div class="admin-sidebar">
+                        <h6><i class="fas fa-user-shield"></i> Админ</h6>
+                        <div id="adminInfo">
+                            <small class="text-muted">Загрузка...</small>
+                        </div>
+                        <hr>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-outline-primary btn-sm" onclick="showSection('active_directory')">
+                                <i class="fas fa-users"></i> Active Directory
+                            </button>
+                            <button class="btn btn-outline-info btn-sm" onclick="showSection('jira')">
+                                <i class="fas fa-tasks"></i> Jira
+                            </button>
+                            <button class="btn btn-outline-success btn-sm" onclick="showSection('atlassian')">
+                                <i class="fas fa-file-alt"></i> Confluence
+                            </button>
+                            <button class="btn btn-outline-warning btn-sm" onclick="showSection('gitlab')">
+                                <i class="fas fa-code-branch"></i> GitLab
+                            </button>
+                            <button class="btn btn-outline-secondary btn-sm" onclick="showSection('llm')">
+                                <i class="fas fa-robot"></i> LLM
+                            </button>
+                            <button class="btn btn-outline-dark btn-sm" onclick="showSection('redis')">
+                                <i class="fas fa-database"></i> Redis
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm" onclick="showSection('password')">
+                                <i class="fas fa-key"></i> Смена пароля
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Content -->
+                <div class="col-md-9">
+                    <div id="configContent">
+                        <!-- Content will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentConfig = {};
+        let isLoggedIn = false;
+
+        // Login functionality
+        document.getElementById('adminLoginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('adminUsername').value;
+            const password = document.getElementById('adminPassword').value;
+            const loginBtn = document.getElementById('adminLoginBtn');
+            const btnText = loginBtn.querySelector('.btn-text');
+            const loading = loginBtn.querySelector('.loading');
+            
+            // Show loading
+            btnText.style.display = 'none';
+            loading.style.display = 'inline-block';
+            loginBtn.disabled = true;
+            
+            try {
+                const response = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    isLoggedIn = true;
+                    document.getElementById('loginSection').style.display = 'none';
+                    document.getElementById('adminPanel').style.display = 'block';
+                    loadAdminInfo();
+                    loadConfig();
+                } else {
+                    alert('Ошибка входа: ' + data.message);
+                }
+            } catch (error) {
+                alert('Ошибка соединения: ' + error.message);
+            } finally {
+                // Hide loading
+                btnText.style.display = 'inline-block';
+                loading.style.display = 'none';
+                loginBtn.disabled = false;
+            }
+        });
+
+        // Load admin info
+        async function loadAdminInfo() {
+            try {
+                const response = await fetch('/api/admin/info');
+                const data = await response.json();
+                
+                document.getElementById('adminInfo').innerHTML = `
+                    <div><strong>${data.username}</strong></div>
+                    <small class="text-muted">
+                        Создан: ${new Date(data.created_at).toLocaleDateString()}
+                    </small>
+                `;
+            } catch (error) {
+                console.error('Ошибка загрузки информации об админе:', error);
+            }
+        }
+
+        // Load configuration
+        async function loadConfig() {
+            try {
+                console.log('Loading configuration...');
+                const response = await fetch('/api/admin/config');
+                currentConfig = await response.json();
+                console.log('Loaded config:', currentConfig);
+                showSection('active_directory');
+            } catch (error) {
+                console.error('Ошибка загрузки конфигурации:', error);
+            }
+        }
+
+        // Show configuration section
+        function showSection(section) {
+            const content = document.getElementById('configContent');
+            
+            if (section === 'password') {
+                content.innerHTML = getPasswordChangeForm();
+                return;
+            }
+            
+            if (section === 'llm') {
+                loadLLMConfig();
+                return;
+            }
+            
+            const config = currentConfig[section] || {};
+            console.log(`Showing section: ${section}`, config);
+            content.innerHTML = getConfigForm(section, config);
+        }
+
+        // Get configuration form
+        function getConfigForm(section, config) {
+            const sectionNames = {
+                'active_directory': 'Active Directory',
+                'jira': 'Jira',
+                'atlassian': 'Atlassian Confluence',
+                'gitlab': 'GitLab',
+                'llm': 'LLM Сервер',
+                'redis': 'Redis'
+            };
+            
+            const sectionConfigs = {
+                'active_directory': [
+                    { key: 'server', label: 'AD Сервер', type: 'text', placeholder: 'ldap://domain.local:389' },
+                    { key: 'domain', label: 'Домен', type: 'text', placeholder: 'domain.local' },
+                    { key: 'base_dn', label: 'Base DN', type: 'text', placeholder: 'CN=Users,DC=domain,DC=local' },
+                    { key: 'service_user', label: 'Service User', type: 'text', placeholder: 'service_account' },
+                    { key: 'service_password', label: 'Service Password', type: 'password', placeholder: 'пароль для service account' },
+                    { key: 'enabled', label: 'Включено', type: 'checkbox' }
+                ],
+                'jira': [
+                    { key: 'url', label: 'URL', type: 'text', placeholder: 'https://domain.atlassian.net' },
+                    { key: 'username', label: 'Имя пользователя', type: 'text', placeholder: 'user@domain.com' },
+                    { key: 'api_token', label: 'API Токен', type: 'password', placeholder: 'ваш-api-токен' },
+                    { key: 'enabled', label: 'Включено', type: 'checkbox' }
+                ],
+                'atlassian': [
+                    { key: 'url', label: 'URL', type: 'text', placeholder: 'https://domain.atlassian.net' },
+                    { key: 'username', label: 'Имя пользователя', type: 'text', placeholder: 'user@domain.com' },
+                    { key: 'api_token', label: 'API Токен', type: 'password', placeholder: 'ваш-api-токен' },
+                    { key: 'enabled', label: 'Включено', type: 'checkbox' }
+                ],
+                'gitlab': [
+                    { key: 'url', label: 'URL', type: 'text', placeholder: 'https://gitlab.com' },
+                    { key: 'token', label: 'Токен', type: 'password', placeholder: 'ваш-gitlab-токен' },
+                    { key: 'enabled', label: 'Включено', type: 'checkbox' }
+                ],
+                'llm': [
+                    { key: 'provider', label: 'Провайдер по умолчанию', type: 'select', options: ['openai', 'anthropic', 'google', 'ollama', 'local'] }
+                ],
+                'redis': [
+                    { key: 'url', label: 'URL', type: 'text', placeholder: 'redis://localhost:6379' },
+                    { key: 'enabled', label: 'Включено', type: 'checkbox' }
+                ],
+                'mcp_servers': [
+                    { key: 'jira', label: 'Jira MCP', type: 'section' },
+                    { key: 'gitlab', label: 'GitLab MCP', type: 'section' },
+                    { key: 'confluence', label: 'Confluence MCP', type: 'section' }
+                ]
+            };
+            
+            const fields = sectionConfigs[section] || [];
+            const statusClass = config.enabled ? 'status-enabled' : 'status-disabled';
+            const statusText = config.enabled ? 'Включено' : 'Отключено';
+            
+            let formHTML = `
+                <div class="card config-card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-cog"></i> ${sectionNames[section]}
+                            <span class="status-indicator ${statusClass}"></span>
+                            <small>${statusText}</small>
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="configForm_${section}">
+            `;
+            
+            fields.forEach(field => {
+                if (field.type === 'checkbox') {
+                    formHTML += `
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="${field.key}" 
+                                   ${config[field.key] ? 'checked' : ''}>
+                            <label class="form-check-label" for="${field.key}">
+                                ${field.label}
+                            </label>
+                        </div>
+                    `;
+                } else {
+                    formHTML += `
+                        <div class="mb-3">
+                            <label for="${field.key}" class="form-label">${field.label}</label>
+                            <input type="${field.type}" class="form-control" id="${field.key}" 
+                                   value="${config[field.key] || ''}" 
+                                   placeholder="${field.placeholder || ''}">
+                        </div>
+                    `;
+                }
+            });
+            
+            formHTML += `
+                        </form>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary" onclick="saveConfig('${section}')">
+                                <i class="fas fa-save"></i> Сохранить
+                            </button>
+                            <button class="btn btn-warning" onclick="reinitializeSystem()">
+                                <i class="fas fa-sync-alt"></i> Переинициализировать
+                            </button>
+                            <button class="btn btn-success" onclick="testConnection('${section}')">
+                                <i class="fas fa-plug"></i> Тестировать
+                            </button>
+                        </div>
+                        <div id="testResult_${section}" class="mt-3"></div>
+                    </div>
+                </div>
+            `;
+            
+            return formHTML;
+        }
+
+        // Get password change form
+        function getPasswordChangeForm() {
+            return `
+                <div class="card config-card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-key"></i> Смена пароля админа</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="passwordChangeForm">
+                            <div class="mb-3">
+                                <label for="oldPassword" class="form-label">Старый пароль</label>
+                                <input type="password" class="form-control" id="oldPassword" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="newPassword" class="form-label">Новый пароль</label>
+                                <input type="password" class="form-control" id="newPassword" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="confirmPassword" class="form-label">Подтвердите пароль</label>
+                                <input type="password" class="form-control" id="confirmPassword" required>
+                            </div>
+                            <button type="submit" class="btn btn-danger">
+                                <i class="fas fa-key"></i> Изменить пароль
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Save configuration
+        async function saveConfig(section) {
+            const form = document.getElementById(`configForm_${section}`);
+            if (!form) {
+                console.error(`Form configForm_${section} not found`);
+                alert('Ошибка: форма не найдена');
+                return;
+            }
+            
+            const settings = {};
+            
+            // Collect all form elements
+            const inputs = form.querySelectorAll('input, select, textarea');
+            inputs.forEach(input => {
+                if (!input.id) {
+                    console.warn('Input without ID found:', input);
+                    return;
+                }
+                
+                if (input.type === 'checkbox') {
+                    settings[input.id] = input.checked;
+                } else if (input.type === 'number') {
+                    settings[input.id] = parseInt(input.value) || 0;
+                } else if (input.type === 'radio') {
+                    if (input.checked) {
+                        settings[input.name] = input.value;
+                    }
+                } else {
+                    settings[input.id] = input.value || '';
+                }
+            });
+            
+            console.log(`Saving config for section: ${section}`, settings);
+            console.log('Form elements found:', inputs.length);
+            inputs.forEach(input => {
+                console.log(`Element: ${input.id}, Type: ${input.type}, Value: ${input.value}, Checked: ${input.checked}`);
+            });
+            
+            // Check if we have any settings
+            if (Object.keys(settings).length === 0) {
+                console.warn('No settings collected from form');
+                alert('Ошибка: не удалось собрать данные из формы');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admin/config/update', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        section: section,
+                        settings: settings
+                    })
+                });
+                
+                const data = await response.json();
+                console.log('Save response:', data);
+                
+                if (data.success) {
+                    alert('Конфигурация сохранена!');
+                    loadConfig(); // Reload config
+                } else {
+                    alert('Ошибка сохранения: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Save error:', error);
+                alert('Ошибка соединения: ' + error.message);
+            }
+        }
+
+        // Test connection
+        async function testConnection(section) {
+            const resultDiv = document.getElementById(`testResult_${section}`);
+            resultDiv.innerHTML = '<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Тестирование подключения...</div>';
+            
+            try {
+                const response = await fetch('/api/admin/test-connection', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        service: section
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `<div class="alert alert-success"><i class="fas fa-check"></i> ${data.message}</div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="alert alert-danger"><i class="fas fa-times"></i> ${data.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="alert alert-danger"><i class="fas fa-times"></i> Ошибка тестирования: ${error.message}</div>`;
+            }
+        }
+
+        // Password change form
+        document.addEventListener('submit', async function(e) {
+            if (e.target.id === 'passwordChangeForm') {
+                e.preventDefault();
+                
+                const oldPassword = document.getElementById('oldPassword').value;
+                const newPassword = document.getElementById('newPassword').value;
+                const confirmPassword = document.getElementById('confirmPassword').value;
+                
+                if (newPassword !== confirmPassword) {
+                    alert('Новые пароли не совпадают!');
+                    return;
+                }
+                
+                try {
+                    const response = await fetch('/api/admin/change-password', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            old_password: oldPassword,
+                            new_password: newPassword
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        alert('Пароль успешно изменен!');
+                        document.getElementById('passwordChangeForm').reset();
+                    } else {
+                        alert('Ошибка смены пароля: ' + data.message);
+                    }
+                } catch (error) {
+                    alert('Ошибка соединения: ' + error.message);
+                }
+            }
+        });
+
+        // LLM Configuration Functions
+        async function loadLLMConfig() {
+            try {
+                const response = await fetch('/api/admin/llm/config');
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayLLMConfig(data.config);
+                } else {
+                    document.getElementById('configContent').innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle"></i> Ошибка загрузки конфигурации LLM: ${data.message}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('configContent').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> Ошибка соединения: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        function displayLLMConfig(config) {
+            const providers = config.providers || {};
+            const currentProvider = config.provider || 'ollama';
+            
+            let html = `
+                <div class="card config-card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-robot"></i> LLM Конфигурация
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Основные настройки</h6>
+                                <div class="mb-3">
+                                    <label for="llm_provider" class="form-label">Провайдер по умолчанию</label>
+                                    <select class="form-select" id="llm_provider">
+                                        <option value="openai" ${currentProvider === 'openai' ? 'selected' : ''}>OpenAI</option>
+                                        <option value="anthropic" ${currentProvider === 'anthropic' ? 'selected' : ''}>Anthropic Claude</option>
+                                        <option value="google" ${currentProvider === 'google' ? 'selected' : ''}>Google Gemini</option>
+                                        <option value="ollama" ${currentProvider === 'ollama' ? 'selected' : ''}>Ollama</option>
+                                        <option value="local" ${currentProvider === 'local' ? 'selected' : ''}>Local</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Провайдеры</h6>
+                                <div class="accordion" id="providersAccordion">
+            `;
+            
+            // Добавляем конфигурации провайдеров
+            const providerNames = ['openai', 'anthropic', 'google', 'ollama', 'local'];
+            providerNames.forEach((providerName, index) => {
+                const providerConfig = providers[providerName] || {};
+                const isExpanded = index === 0;
+                
+                html += `
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="heading${index}">
+                            <button class="accordion-button ${isExpanded ? '' : 'collapsed'}" type="button" 
+                                    data-bs-toggle="collapse" data-bs-target="#collapse${index}">
+                                <i class="fas fa-${getProviderIcon(providerName)}"></i> ${getProviderDisplayName(providerName)}
+                                <span class="badge ${providerConfig.enabled ? 'bg-success' : 'bg-secondary'} ms-2">
+                                    ${providerConfig.enabled ? 'Включен' : 'Отключен'}
+                                </span>
+                            </button>
+                        </h2>
+                        <div id="collapse${index}" class="accordion-collapse collapse ${isExpanded ? 'show' : ''}">
+                            <div class="accordion-body">
+                                ${getProviderConfigForm(providerName, providerConfig)}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += `
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 mt-3">
+                            <button class="btn btn-primary" onclick="saveLLMConfig()">
+                                <i class="fas fa-save"></i> Сохранить конфигурацию
+                            </button>
+                            <button class="btn btn-warning" onclick="reinitializeSystem()">
+                                <i class="fas fa-sync-alt"></i> Переинициализировать
+                            </button>
+                            <button class="btn btn-info" onclick="testLLMProvider()">
+                                <i class="fas fa-play"></i> Тестировать провайдер
+                            </button>
+                            <button class="btn btn-secondary" onclick="loadLLMConfig()">
+                                <i class="fas fa-refresh"></i> Обновить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('configContent').innerHTML = html;
+        }
+
+        function getProviderIcon(providerName) {
+            const icons = {
+                'openai': 'brain',
+                'anthropic': 'user-tie',
+                'google': 'search',
+                'ollama': 'server',
+                'local': 'home'
+            };
+            return icons[providerName] || 'cog';
+        }
+
+        function getProviderDisplayName(providerName) {
+            const names = {
+                'openai': 'OpenAI',
+                'anthropic': 'Anthropic Claude',
+                'google': 'Google Gemini',
+                'ollama': 'Ollama',
+                'local': 'Local'
+            };
+            return names[providerName] || providerName;
+        }
+
+        function getProviderConfigForm(providerName, config) {
+            const fields = getProviderFields(providerName);
+            let html = '';
+            
+            fields.forEach(field => {
+                if (field.type === 'checkbox') {
+                    html += `
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="${providerName}_${field.key}" 
+                                   ${config[field.key] ? 'checked' : ''}>
+                            <label class="form-check-label" for="${providerName}_${field.key}">
+                                ${field.label}
+                            </label>
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="mb-2">
+                            <label for="${providerName}_${field.key}" class="form-label">${field.label}</label>
+                            <input type="${field.type}" class="form-control" id="${providerName}_${field.key}" 
+                                   value="${config[field.key] || ''}" 
+                                   placeholder="${field.placeholder || ''}">
+                        </div>
+                    `;
+                }
+            });
+            
+            return html;
+        }
+
+        function getProviderFields(providerName) {
+            const fields = {
+                'openai': [
+                    { key: 'enabled', label: 'Включен', type: 'checkbox' },
+                    { key: 'api_key', label: 'API ключ', type: 'password', placeholder: 'sk-...' },
+                    { key: 'model', label: 'Модель', type: 'text', placeholder: 'gpt-4o-mini' },
+                    { key: 'base_url', label: 'Base URL', type: 'text', placeholder: 'https://api.openai.com/v1' },
+                    { key: 'temperature', label: 'Temperature', type: 'number', placeholder: '0.7' },
+                    { key: 'max_tokens', label: 'Max Tokens', type: 'number', placeholder: '4000' },
+                    { key: 'timeout', label: 'Timeout (сек)', type: 'number', placeholder: '30' }
+                ],
+                'anthropic': [
+                    { key: 'enabled', label: 'Включен', type: 'checkbox' },
+                    { key: 'api_key', label: 'API ключ', type: 'password', placeholder: 'sk-ant-...' },
+                    { key: 'model', label: 'Модель', type: 'text', placeholder: 'claude-3-5-sonnet-20241022' },
+                    { key: 'base_url', label: 'Base URL', type: 'text', placeholder: 'https://api.anthropic.com' },
+                    { key: 'temperature', label: 'Temperature', type: 'number', placeholder: '0.7' },
+                    { key: 'max_tokens', label: 'Max Tokens', type: 'number', placeholder: '4000' },
+                    { key: 'timeout', label: 'Timeout (сек)', type: 'number', placeholder: '30' }
+                ],
+                'google': [
+                    { key: 'enabled', label: 'Включен', type: 'checkbox' },
+                    { key: 'api_key', label: 'API ключ', type: 'password', placeholder: 'AI...' },
+                    { key: 'model', label: 'Модель', type: 'text', placeholder: 'gemini-1.5-flash' },
+                    { key: 'base_url', label: 'Base URL', type: 'text', placeholder: 'https://generativelanguage.googleapis.com' },
+                    { key: 'temperature', label: 'Temperature', type: 'number', placeholder: '0.7' },
+                    { key: 'max_tokens', label: 'Max Tokens', type: 'number', placeholder: '4000' },
+                    { key: 'timeout', label: 'Timeout (сек)', type: 'number', placeholder: '30' }
+                ],
+                'ollama': [
+                    { key: 'enabled', label: 'Включен', type: 'checkbox' },
+                    { key: 'base_url', label: 'Base URL', type: 'text', placeholder: 'http://localhost:11434' },
+                    { key: 'model', label: 'Модель', type: 'text', placeholder: 'llama3.1:8b' },
+                    { key: 'temperature', label: 'Temperature', type: 'number', placeholder: '0.7' },
+                    { key: 'max_tokens', label: 'Max Tokens', type: 'number', placeholder: '4000' },
+                    { key: 'timeout', label: 'Timeout (сек)', type: 'number', placeholder: '30' }
+                ],
+                'local': [
+                    { key: 'enabled', label: 'Включен', type: 'checkbox' },
+                    { key: 'base_url', label: 'Base URL', type: 'text', placeholder: 'http://localhost:8000' },
+                    { key: 'model', label: 'Модель', type: 'text', placeholder: 'local' },
+                    { key: 'temperature', label: 'Temperature', type: 'number', placeholder: '0.7' },
+                    { key: 'max_tokens', label: 'Max Tokens', type: 'number', placeholder: '4000' },
+                    { key: 'timeout', label: 'Timeout (сек)', type: 'number', placeholder: '30' }
+                ]
+            };
+            return fields[providerName] || [];
+        }
+
+        async function saveLLMConfig() {
+            try {
+                const config = {
+                    provider: document.getElementById('llm_provider').value,
+                    providers: {}
+                };
+                
+                // Собираем конфигурации провайдеров
+                const providerNames = ['openai', 'anthropic', 'google', 'ollama', 'local'];
+                providerNames.forEach(providerName => {
+                    const fields = getProviderFields(providerName);
+                    const providerConfig = {};
+                    
+                    fields.forEach(field => {
+                        const element = document.getElementById(`${providerName}_${field.key}`);
+                        if (element) {
+                            if (field.type === 'checkbox') {
+                                providerConfig[field.key] = element.checked;
+                            } else if (field.type === 'number') {
+                                providerConfig[field.key] = parseInt(element.value) || 0;
+                            } else {
+                                providerConfig[field.key] = element.value;
+                            }
+                        }
+                    });
+                    
+                    config.providers[providerName] = providerConfig;
+                });
+                
+                console.log('Saving LLM config:', config);
+                
+                const response = await fetch('/api/admin/llm/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Конфигурация LLM успешно сохранена!');
+                    loadLLMConfig();
+                } else {
+                    alert('Ошибка сохранения конфигурации: ' + data.message);
+                }
+            } catch (error) {
+                alert('Ошибка соединения: ' + error.message);
+            }
+        }
+
+        async function reinitializeSystem() {
+            if (!confirm('Вы уверены, что хотите переинициализировать систему? Это перезагрузит все компоненты.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admin/system/reinitialize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('✅ ' + data.message);
+                    // Обновляем конфигурацию после переинициализации
+                    loadConfig();
+                } else {
+                    alert('❌ ' + data.message);
+                }
+            } catch (error) {
+                alert('❌ Ошибка соединения: ' + error.message);
+            }
+        }
+
+        async function testLLMProvider() {
+            const provider = document.getElementById('llm_provider').value;
+            const message = prompt('Введите тестовое сообщение:', 'Привет! Это тестовое сообщение.');
+            
+            if (!message) return;
+            
+            try {
+                const response = await fetch('/api/admin/llm/test', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        provider: provider,
+                        message: message
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`Тест провайдера ${provider} успешен!\n\nОтвет: ${data.response}`);
+                } else {
+                    alert(`Ошибка тестирования провайдера ${provider}: ${data.message}`);
+                }
+            } catch (error) {
+                alert('Ошибка соединения: ' + error.message);
+            }
+        }
+    </script>
+        </div>
+    </div>
+</body>
+</html>
