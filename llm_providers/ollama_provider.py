@@ -54,43 +54,40 @@ class OllamaProvider(BaseLLMProvider):
     async def generate_with_tools(self, user_message: str, messages: List[Dict[str, str]], tools: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
         """Генерирует ответ с поддержкой инструментов"""
         try:
-            # Для Ollama используем простой подход - возвращаем текстовый ответ
-            # с описанием доступных инструментов
-            response = await self.generate_response(messages, **kwargs)
+            params = self._get_model_params(**kwargs)
             
-            # Простая логика определения необходимости вызова инструмента
-            if any(keyword in user_message.lower() for keyword in ['создать', 'найти', 'поиск', 'список', 'показать', 'получить']):
-                # Определяем подходящий инструмент
-                if any(keyword in user_message.lower() for keyword in ['jira', 'задача', 'тикет']):
-                    return {
-                        'action': 'call_tool',
-                        'server': 'jira',
-                        'tool': 'search_issues',
-                        'arguments': {'jql': f'text ~ "{user_message}"', 'max_results': 5}
-                    }
-                elif any(keyword in user_message.lower() for keyword in ['gitlab', 'проект', 'коммит']):
-                    return {
-                        'action': 'call_tool',
-                        'server': 'gitlab',
-                        'tool': 'list_projects',
-                        'arguments': {'search': user_message, 'per_page': 5}
-                    }
-                elif any(keyword in user_message.lower() for keyword in ['confluence', 'страница', 'документ']):
-                    return {
-                        'action': 'call_tool',
-                        'server': 'confluence',
-                        'tool': 'search_pages',
-                        'arguments': {'query': user_message, 'limit': 5}
-                    }
+            # Форматируем инструменты для OpenAI
+            formatted_tools = self._format_tools(tools)
             
-            return {
-                'action': 'respond',
-                'message': response
-            }
+            response = await self.client.chat.completions.create(
+                model=self.config.model,
+                messages=self._format_messages(messages),
+                tools=formatted_tools,
+                tool_choice="auto",
+                temperature=params['temperature'],
+                max_tokens=params['max_tokens']
+            )
+            
+            message = response.choices[0].message
+            
+            # Проверяем, есть ли вызов инструмента
+            if message.tool_calls:
+                tool_call = message.tool_calls[0]
+                return {
+                    'action': 'call_tool',
+                    'server': tool_call.function.name.split('.')[0] if '.' in tool_call.function.name else 'unknown',
+                    'tool': tool_call.function.name.split('.')[1] if '.' in tool_call.function.name else tool_call.function.name,
+                    'arguments': json.loads(tool_call.function.arguments)
+                }
+            else:
+                return {
+                    'action': 'respond',
+                    'message': message.content
+                }
                 
         except Exception as e:
-            raise Exception(f"Ошибка Ollama API с инструментами: {str(e)}")
-    
+            raise Exception(f"Ошибка OpenAI API с инструментами: {str(e)}")
+
     async def check_health(self) -> Dict[str, Any]:
         """Проверяет доступность Ollama API"""
         try:
@@ -118,7 +115,23 @@ class OllamaProvider(BaseLLMProvider):
                 'error': str(e)
             }
     
-    def _format_messages(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """Форматирует сообщения для Ollama"""
-        # Ollama использует стандартный формат сообщений
-        return messages
+    def _format_tools(self, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Форматирует инструменты для OpenAI"""
+        formatted_tools = []
+        
+        for tool in tools:
+            # Группируем инструменты по серверам
+            server_name = tool.get('server', 'unknown')
+            tool_name = tool['name']
+            
+            formatted_tool = {
+                "type": "function",
+                "function": {
+                    "name": f"{server_name}.{tool_name}",
+                    "description": tool['description'],
+                    "parameters": tool.get('parameters', {})
+                }
+            }
+            formatted_tools.append(formatted_tool)
+        
+        return formatted_tools
