@@ -156,7 +156,7 @@ class LLMClient:
                         response['arguments']
                     )
                 
-                return self._format_tool_result(tool_result, response)
+                return await self._format_tool_result(tool_result, response)
             elif response.get('action') == 'respond':
                 return response.get('message', 'Нет ответа')
             else:
@@ -344,7 +344,7 @@ class LLMClient:
         
         return None
     
-    def _format_tool_result(self, tool_result: Dict[str, Any], original_response: Dict[str, Any]) -> str:
+    async def _format_tool_result(self, tool_result: Dict[str, Any], original_response: Dict[str, Any]) -> str:
         """Форматирует результат выполнения инструмента с гибкой обработкой любых структур данных"""
         if 'error' in tool_result:
             return f"❌ Ошибка выполнения инструмента {original_response.get('tool', 'unknown')}: {tool_result['error']}"
@@ -354,90 +354,118 @@ class LLMClient:
         server_name = original_response.get('server', 'unknown')
         
         # Форматируем результат в зависимости от структуры данных
-        return self._format_any_data(tool_result, tool_name, server_name)
+        return await self._format_any_data(tool_result, tool_name, server_name)
     
-    async def _format_any_data(self, data: Any, tool_name: str = "unknown", server_name: str = "unknown", indent: int = 0) -> str:
+    async def _format_any_data(self, data: Any, tool_name: str = "unknown", server_name: str = "unknown", indent: int = 0, _llm_top_level: bool = True) -> str:
         """
         Рекурсивно форматирует любые данные в красивый текст.
         В конце дополнительно вызывает LLM для улучшения читабельности результата.
         """
         indent_str = "  " * indent
 
-        if data is None:
-            result_text = f"{indent_str}📋 Результат: пусто"
-        elif isinstance(data, bool):
-            result_text = f"{indent_str}📋 Результат: {'✅ Да' if data else '❌ Нет'}"
-        elif isinstance(data, (str, int, float)):
-            result_text = f"{indent_str}📋 Результат: {data}"
-        elif isinstance(data, list):
-            if len(data) == 0:
-                result_text = f"{indent_str}📋 Результат: пустой список"
-            else:
-                context_emoji = self._get_context_emoji(tool_name, server_name)
-                result_text = f"{indent_str}{context_emoji} Найдено {len(data)} элементов:\n"
-                max_items = 15
-                for i, item in enumerate(data[:max_items], 1):
-                    if isinstance(item, dict):
-                        key_fields = self._extract_key_fields(item, tool_name)
-                        if key_fields:
-                            result_text += f"{indent_str}  {i}. {key_fields}\n"
-                        else:
-                            # рекурсивный вызов должен быть асинхронным
-                            formatted = await self._format_any_data(item, tool_name, server_name, indent + 2)
-                            result_text += f"{indent_str}  {i}. {formatted}\n"
-                    elif isinstance(item, (str, int, float)):
-                        result_text += f"{indent_str}  {i}. {item}\n"
-                    else:
-                        formatted = await self._format_any_data(item, tool_name, server_name, indent + 2)
-                        result_text += f"{indent_str}  {i}. {formatted}\n"
-                if len(data) > max_items:
-                    result_text += f"{indent_str}  ... и еще {len(data) - max_items} элементов\n"
-        elif isinstance(data, dict):
-            context_emoji = self._get_context_emoji(tool_name, server_name)
-            result_text = f"{indent_str}{context_emoji} Результат:\n"
-            sorted_keys = self._sort_dict_keys(data)
-            for key in sorted_keys:
-                value = data[key]
-                formatted_key = self._format_key_name(key)
-                if isinstance(value, (str, int, float, bool)) or value is None:
-                    formatted_value = self._format_simple_value(value)
-                    result_text += f"{indent_str}  {formatted_key}: {formatted_value}\n"
-                elif isinstance(value, list):
-                    if len(value) == 0:
-                        result_text += f"{indent_str}  {formatted_key}: пустой список\n"
-                    elif len(value) <= 3 and all(isinstance(item, (str, int, float)) for item in value):
-                        formatted_values = [self._format_simple_value(item) for item in value]
-                        result_text += f"{indent_str}  {formatted_key}: {', '.join(formatted_values)}\n"
-                    else:
-                        result_text += f"{indent_str}  {formatted_key}:\n"
-                        formatted = await self._format_any_data(value, tool_name, server_name, indent + 2)
-                        result_text += formatted
-                elif isinstance(value, dict):
-                    result_text += f"{indent_str}  {formatted_key}:\n"
-                    formatted = await self._format_any_data(value, tool_name, server_name, indent + 2)
-                    result_text += formatted
-                else:
-                    formatted = await self._format_any_data(value, tool_name, server_name, indent + 2)
-                    result_text += f"{indent_str}  {formatted_key}: {formatted}\n"
-        else:
-            result_text = f"{indent_str}📋 Результат: {str(data)}"
+        # Вложенная функция для рекурсивного обхода без LLM beautify на каждом уровне
+        async def _format(data, tool_name, server_name, indent, _llm_top_level):
+            indent_str = "  " * indent
 
-        # --- LLM post-processing for beautification ---
-        try:
-            from llm_providers import get_default_llm_provider
-            llm = get_default_llm_provider()
-            beautify_prompt = (
-                "Преобразуй следующий результат в более красивый, структурированный и читабельный вид для пользователя. "
-                "Используй списки, эмодзи, заголовки, если это уместно. Не добавляй лишних пояснений, только результат.\n\n"
-                f"Результат:\n{result_text}"
-            )
-            beautified = await llm.simple_completion(beautify_prompt, system_prompt="Ты помощник, который красиво форматирует результаты для пользователя.")
-            if beautified and isinstance(beautified, str) and len(beautified) > 0:
-                return beautified
-        except Exception as e:
-            # Если LLM не сработал, возвращаем обычный результат
-            import logging
-            logging.getLogger("llm_client").warning(f"LLM beautify failed: {e}")
+            if data is None:
+                result_text = f"{indent_str}📋 Результат: пусто"
+            elif isinstance(data, bool):
+                result_text = f"{indent_str}📋 Результат: {'✅ Да' if data else '❌ Нет'}"
+            elif isinstance(data, (str, int, float)):
+                result_text = f"{indent_str}📋 Результат: {data}"
+            elif isinstance(data, list):
+                if len(data) == 0:
+                    result_text = f"{indent_str}📋 Результат: пустой список"
+                else:
+                    context_emoji = self._get_context_emoji(tool_name, server_name)
+                    result_text = f"{indent_str}{context_emoji} Найдено {len(data)} элементов:\n"
+                    max_items = 15
+                    for i, item in enumerate(data[:max_items], 1):
+                        if isinstance(item, dict):
+                            key_fields_list = self._extract_key_fields(item, tool_name)
+                            if key_fields_list:
+                                # Если найдено несколько ключевых полей, выводим их через запятую
+                                if isinstance(key_fields_list, (list, tuple)):
+                                    key_fields_str = ", ".join(str(f) for f in key_fields_list if f)
+                                else:
+                                    key_fields_str = str(key_fields_list)
+                                result_text += f"{indent_str}  {i}. {key_fields_str}\n"
+                            else:
+                                formatted = await _format(item, tool_name, server_name, indent + 2, False)
+                                result_text += f"{indent_str}  {i}. {formatted}\n"
+                        elif isinstance(item, (str, int, float)):
+                            result_text += f"{indent_str}  {i}. {item}\n"
+                        else:
+                            formatted = await _format(item, tool_name, server_name, indent + 2, False)
+                            result_text += f"{indent_str}  {i}. {formatted}\n"
+                    if len(data) > max_items:
+                        result_text += f"{indent_str}  ... и еще {len(data) - max_items} элементов\n"
+            elif isinstance(data, dict):
+                context_emoji = self._get_context_emoji(tool_name, server_name)
+                result_text = f"{indent_str}{context_emoji} Результат:\n"
+                sorted_keys = self._sort_dict_keys(data)
+                for key in sorted_keys:
+                    value = data[key]
+                    formatted_key = self._format_key_name(key)
+                    if isinstance(value, (str, int, float, bool)) or value is None:
+                        formatted_value = self._format_simple_value(value)
+                        result_text += f"{indent_str}  {formatted_key}: {formatted_value}\n"
+                    elif isinstance(value, list):
+                        if len(value) == 0:
+                            result_text += f"{indent_str}  {formatted_key}: пустой список\n"
+                        elif len(value) <= 3 and all(isinstance(item, (str, int, float)) for item in value):
+                            formatted_values = [self._format_simple_value(item) for item in value]
+                            result_text += f"{indent_str}  {formatted_key}: {', '.join(formatted_values)}\n"
+                        else:
+                            result_text += f"{indent_str}  {formatted_key}:\n"
+                            formatted = await _format(value, tool_name, server_name, indent + 2, False)
+                            result_text += formatted
+                    elif isinstance(value, dict):
+                        result_text += f"{indent_str}  {formatted_key}:\n"
+                        formatted = await _format(value, tool_name, server_name, indent + 2, False)
+                        result_text += formatted
+                    else:
+                        formatted = await _format(value, tool_name, server_name, indent + 2, False)
+                        result_text += f"{indent_str}  {formatted_key}: {formatted}\n"
+            else:
+                result_text = f"{indent_str}📋 Результат: {str(data)}"
+            return result_text
+
+        # Только на самом верхнем уровне вызываем LLM beautify
+        result_text = await _format(data, tool_name, server_name, indent, _llm_top_level)
+        if _llm_top_level:
+            try:
+                from llm_providers.provider_factory import LLMProviderFactory
+                llm = LLMProviderFactory.create_default_provider()
+                prompt = (
+                    "Ты — помощник, который форматирует данные для пользователя. "
+                    "Твоя задача — преобразовать полученный ниже текст в структурированный, "
+                    "красиво оформленный и легко читаемый ответ на русском языке.\n\n"
+                    "Используй:\n"
+                    "- **Заголовки** и подзаголовки\n"
+                    "- **Маркированные** и нумерованные списки\n"
+                    "- Эмодзи для акцентов\n"
+                    "- Разделители (--- или ***)\n"
+                    "- **Жирный шрифт** для важных моментов\n\n"
+                    "Не добавляй пояснений о своей работе, не объясняй, что ты делаешь. "
+                    "Просто выдай готовый, красиво оформленный результат для пользователя."
+                )
+
+                result_text = (
+                    "Преобразуй следующий результат в красивый и читабельный вид.\n\n"
+                    + str(result_text)
+                )
+
+                # Передаем результат напрямую, без лишних инструкций и без перевода
+                beautified = await llm.generate_response([
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": str(result_text)}
+                ], temperature = 0.7)
+                if beautified and isinstance(beautified, str) and len(beautified) > 0:
+                    return beautified
+            except Exception as e:
+                import logging
+                logging.getLogger("llm_client").warning(f"LLM beautify failed: {e}")
 
         return result_text
     
@@ -475,15 +503,18 @@ class LLMClient:
         
         # Приоритетные поля для разных типов инструментов
         priority_fields = {
-            'project': ['name', 'id', 'description', 'web_url'],
-            'commit': ['id', 'title', 'author_name', 'created_at'],
-            'issue': ['key', 'summary', 'status', 'assignee'],
-            'user': ['name', 'email', 'username', 'displayName'],
-            'page': ['title', 'id', 'space', 'url'],
-            'branch': ['name', 'commit', 'protected']
+            'project': ['name', 'id', 'description', 'web_url', 'path'],
+            'commit': ['id', 'title', 'author_name', 'created_at', 'message'],
+            'issue': ['key', 'summary', 'status', 'assignee', 'priority', 'type'],
+            'user': ['display_name', 'email', 'title', 'phone', 'department'],
+            'page': ['title', 'id', 'space', 'url', 'type'],
+            'branch': ['name', 'commit', 'protected', 'default'],
+            'search': ['name', 'email', 'username', 'displayName', 'department', 'title', 'cn'],
+            'list': ['name', 'email', 'username', 'displayName', 'department', 'title', 'cn']
         }
         
-        # Находим подходящие поля
+        # Находим подходящие поля и собираем их все
+        found_fields = []
         for key, fields in priority_fields.items():
             if key in tool_lower:
                 for field in fields:
@@ -491,7 +522,18 @@ class LLMClient:
                         value = item[field]
                         if isinstance(value, str) and len(value) > 50:
                             value = value[:47] + "..."
-                        return f"{field}: {value}"
+                        found_fields.append(f"{field}: {value}")
+                
+                # Если нашли поля для этого типа инструмента, возвращаем их
+                if found_fields:
+                    # Ограничиваем количество полей для читаемости
+                    if tool_lower in ['user', 'search', 'list']:
+                        max_fields = 5  # Для пользователей показываем больше полей
+                    elif tool_lower in ['issue', 'commit']:
+                        max_fields = 4  # Для задач и коммитов
+                    else:
+                        max_fields = len(found_fields)  # Для остальных
+                    return ", ".join(found_fields[:max_fields])
         
         # Если не нашли приоритетные поля, берем первые доступные
         for key, value in item.items():

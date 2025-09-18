@@ -21,7 +21,7 @@ class BaseLLMProvider(ABC):
         pass
     
     @abstractmethod
-    async def generate_response(self, messages: List[Dict[str, str]], **kwargs) -> str:
+    async def generate_response(self, messages: List[Dict[str, str]], temperature:float = -1, **kwargs) -> str:
         """Генерирует ответ на основе сообщений"""
         pass
     

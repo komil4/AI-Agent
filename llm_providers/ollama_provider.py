@@ -29,7 +29,7 @@ class OllamaProvider(BaseLLMProvider):
         # Настраиваем клиент
         self.client = ollama.Client(host=self.base_url)
     
-    async def generate_response(self, messages: List[Dict[str, str]], **kwargs) -> str:
+    async def generate_response(self, messages: List[Dict[str, str]], temperature: float = -1,**kwargs) -> str:
         """Генерирует ответ через Ollama API"""
         try:
             params = self._get_model_params(**kwargs)
@@ -37,13 +37,16 @@ class OllamaProvider(BaseLLMProvider):
             # Конвертируем сообщения в формат Ollama
             formatted_messages = self._format_messages_for_ollama(messages)
             
+            if temperature == -1:
+                temperature = params['temperature']
+
             # Используем синхронный клиент в асинхронном контексте
             def _generate():
                 return self.client.chat(
                     model=self.model,
                     messages=formatted_messages,
                     options={
-                        'temperature': params['temperature'],
+                        'temperature': temperature,
                         'num_predict': params['max_tokens']
                     }
                 )

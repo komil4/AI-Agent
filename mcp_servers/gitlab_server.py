@@ -613,18 +613,25 @@ class GitLabMCPServer:
         """Получает коммиты проекта через инструмент"""
         try:
             project_name = arguments.get('project_name')
+            project_id = arguments.get('project_id')
             per_page = arguments.get('per_page', 5)
             author_email = arguments.get('author_email')
             
-            if not project_name:
-                return {'error': 'Не указано название проекта'}
+            if not project_name and not project_id:
+                return {'error': 'Не указано название проекта или ID проекта'}
             
-            # Находим проект
-            projects = self.gl.projects.list(search=project_name)
-            if not projects:
-                return {'error': f'Проект "{project_name}" не найден'}
-            
-            project = projects[0]
+            # Получаем проект по ID или по названию
+            if project_id:
+                try:
+                    project = self.gl.projects.get(project_id)
+                except Exception as e:
+                    return {'error': f'Проект с ID "{project_id}" не найден: {str(e)}'}
+            else:
+                # Находим проект по названию
+                projects = self.gl.projects.list(search=project_name)
+                if not projects:
+                    return {'error': f'Проект "{project_name}" не найден'}
+                project = projects[0]
             
             # Получаем коммиты
             commits = project.commits.list(per_page=per_page)
@@ -646,7 +653,12 @@ class GitLabMCPServer:
                     'web_url': f"{project.web_url}/-/commit/{commit.id}"
                 })
             
-            return {'commits': result, 'project_name': project.name}
+            return {
+                'commits': result, 
+                'project_name': project.name,
+                'project_id': project.id,
+                'project_url': project.web_url
+            }
         except Exception as e:
             return {'error': str(e)}
     
@@ -654,20 +666,30 @@ class GitLabMCPServer:
         """Создает merge request через инструмент"""
         try:
             project_name = arguments.get('project_name')
+            project_id = arguments.get('project_id')
             source_branch = arguments.get('source_branch')
             target_branch = arguments.get('target_branch')
             title = arguments.get('title')
             description = arguments.get('description', '')
             
-            if not all([project_name, source_branch, target_branch, title]):
-                return {'error': 'Не указаны обязательные параметры: project_name, source_branch, target_branch, title'}
+            if not all([source_branch, target_branch, title]):
+                return {'error': 'Не указаны обязательные параметры: source_branch, target_branch, title'}
             
-            # Находим проект
-            projects = self.gl.projects.list(search=project_name)
-            if not projects:
-                return {'error': f'Проект "{project_name}" не найден'}
+            if not project_name and not project_id:
+                return {'error': 'Не указано название проекта или ID проекта'}
             
-            project = projects[0]
+            # Получаем проект по ID или по названию
+            if project_id:
+                try:
+                    project = self.gl.projects.get(project_id)
+                except Exception as e:
+                    return {'error': f'Проект с ID "{project_id}" не найден: {str(e)}'}
+            else:
+                # Находим проект по названию
+                projects = self.gl.projects.list(search=project_name)
+                if not projects:
+                    return {'error': f'Проект "{project_name}" не найден'}
+                project = projects[0]
             
             # Создаем MR
             mr_data = {
@@ -796,10 +818,11 @@ class GitLabMCPServer:
                     "type": "object",
                     "properties": {
                         "project_name": {"type": "string", "description": "Название проекта"},
+                        "project_id": {"type": "string", "description": "ID проекта (альтернатива project_name)"},
                         "per_page": {"type": "integer", "description": "Количество коммитов"},
                         "author_email": {"type": "string", "description": "Email автора для фильтрации"}
                     },
-                    "required": ["project_name"]
+                    "required": []
                 }
             },
             {
@@ -809,12 +832,13 @@ class GitLabMCPServer:
                     "type": "object",
                     "properties": {
                         "project_name": {"type": "string", "description": "Название проекта"},
+                        "project_id": {"type": "string", "description": "ID проекта (альтернатива project_name)"},
                         "source_branch": {"type": "string", "description": "Исходная ветка"},
                         "target_branch": {"type": "string", "description": "Целевая ветка"},
                         "title": {"type": "string", "description": "Заголовок MR"},
                         "description": {"type": "string", "description": "Описание MR"}
                     },
-                    "required": ["project_name", "source_branch", "target_branch", "title"]
+                    "required": ["source_branch", "target_branch", "title"]
                 }
             },
             {
