@@ -804,64 +804,45 @@ class GitLabMCPServer:
                 "name": "list_projects",
                 "description": "Получает список проектов GitLab",
                 "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "search": {"type": "string", "description": "Поисковый запрос"},
-                        "per_page": {"type": "integer", "description": "Количество результатов на странице"}
-                    }
+                    "search": {"type": "string", "description": "Поисковый запрос"},
+                    "per_page": {"type": "integer", "description": "Количество результатов на странице"}
                 }
             },
             {
                 "name": "get_project_commits",
                 "description": "Получает коммиты проекта",
                 "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "project_name": {"type": "string", "description": "Название проекта"},
-                        "project_id": {"type": "string", "description": "ID проекта (альтернатива project_name)"},
-                        "per_page": {"type": "integer", "description": "Количество коммитов"},
-                        "author_email": {"type": "string", "description": "Email автора для фильтрации"}
-                    },
-                    "required": []
+                    "project_name": {"type": "string", "description": "Название проекта"},
+                    "project_id": {"type": "string", "description": "ID проекта (альтернатива project_name)"},
+                    "per_page": {"type": "integer", "description": "Количество коммитов"},
+                    "author_email": {"type": "string", "description": "Email автора для фильтрации"}
                 }
             },
             {
                 "name": "create_merge_request",
                 "description": "Создает merge request",
                 "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "project_name": {"type": "string", "description": "Название проекта"},
-                        "project_id": {"type": "string", "description": "ID проекта (альтернатива project_name)"},
-                        "source_branch": {"type": "string", "description": "Исходная ветка"},
-                        "target_branch": {"type": "string", "description": "Целевая ветка"},
-                        "title": {"type": "string", "description": "Заголовок MR"},
-                        "description": {"type": "string", "description": "Описание MR"}
-                    },
-                    "required": ["source_branch", "target_branch", "title"]
+                    "project_name": {"type": "string", "description": "Название проекта"},
+                    "project_id": {"type": "string", "description": "ID проекта (альтернатива project_name)"},
+                    "source_branch": {"type": "string", "description": "Исходная ветка"},
+                    "target_branch": {"type": "string", "description": "Целевая ветка"},
+                    "title": {"type": "string", "description": "Заголовок MR"},
+                    "description": {"type": "string", "description": "Описание MR"}
                 }
             },
             {
                 "name": "get_project_branches",
                 "description": "Получает ветки проекта",
                 "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "project_name": {"type": "string", "description": "Название проекта"}
-                    },
-                    "required": ["project_name"]
+                    "project_name": {"type": "string", "description": "Название проекта"}
                 }
             },
             {
                 "name": "search_commits_by_task",
                 "description": "Ищет коммиты по номеру задачи",
                 "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "task_key": {"type": "string", "description": "Номер задачи (например, PROJ-123)"},
-                        "per_page": {"type": "integer", "description": "Количество результатов"}
-                    },
-                    "required": ["task_key"]
+                    "task_key": {"type": "string", "description": "Номер задачи (например, PROJ-123)"},
+                    "per_page": {"type": "integer", "description": "Количество результатов"}
                 }
             }
         ]

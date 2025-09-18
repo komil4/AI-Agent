@@ -474,13 +474,9 @@ class LDAPMCPServer:
                 "name": "search_user",
                 "description": "Ищет пользователя в LDAP/AD. Пример запроса: найди пользователя Иванов",
                 "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "username": {"type": "string", "description": "Имя пользователя"},
-                        "email": {"type": "string", "description": "Email пользователя"},
-                        "limit": {"type": "integer", "description": "Максимальное количество результатов"}
-                    },
-                    "required": ["search_query"]
+                    "username": {"type": "string", "description": "Имя пользователя"},
+                    "email": {"type": "string", "description": "Email пользователя"},
+                    "limit": {"type": "integer", "description": "Максимальное количество результатов"}
                 }
             },
             {
@@ -495,12 +491,9 @@ class LDAPMCPServer:
                 "name": "get_user_details",
                 "description": "Получает детальную информацию о пользователе. Пример запроса: дай более детальную информацию о пользователе",
                 "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "username": {"type": "string", "description": "Имя пользователя"},
-                        "email": {"type": "string", "description": "Email пользователя"},
-                        "limit": {"type": "integer", "description": "Максимальное количество результатов"}
-                    }
+                    "username": {"type": "string", "description": "Имя пользователя"},
+                    "email": {"type": "string", "description": "Email пользователя"},
+                    "limit": {"type": "integer", "description": "Максимальное количество результатов"}
                 }
             }
         ]

@@ -539,60 +539,41 @@ class JiraMCPServer:
                 "name": "create_issue",
                 "description": "Создает новую задачу в Jira",
                 "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "summary": {"type": "string", "description": "Краткое описание задачи"},
-                        "description": {"type": "string", "description": "Подробное описание задачи"},
-                        "project_key": {"type": "string", "description": "Ключ проекта (например, TEST)"},
-                        "issue_type": {"type": "string", "description": "Тип задачи (Task, Bug, Story)"}
-                    },
-                    "required": ["summary", "project_key"]
+                    "summary": {"type": "string", "description": "Краткое описание задачи"},
+                    "description": {"type": "string", "description": "Подробное описание задачи"},
+                    "project_key": {"type": "string", "description": "Ключ проекта (например, TEST)"},
+                    "issue_type": {"type": "string", "description": "Тип задачи (Task, Bug, Story)"}
                 }
             },
             {
                 "name": "search_issues",
                 "description": "Ищет задачи в Jira по JQL запросу",
                 "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "jql": {"type": "string", "description": "JQL запрос для поиска"},
-                        "max_results": {"type": "integer", "description": "Максимальное количество результатов"}
-                    },
-                    "required": ["jql"]
+                    "jql": {"type": "string", "description": "JQL запрос для поиска"},
+                    "max_results": {"type": "integer", "description": "Максимальное количество результатов"}
                 }
             },
             {
                 "name": "list_issues",
                 "description": "Получает список последних задач",
                 "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "max_results": {"type": "integer", "description": "Максимальное количество результатов"},
-                        "project_key": {"type": "string", "description": "Фильтр по проекту"}
-                    }
+                    "max_results": {"type": "integer", "description": "Максимальное количество результатов"},
+                    "project_key": {"type": "string", "description": "Фильтр по проекту"}
                 }
             },
             {
                 "name": "update_issue_status",
                 "description": "Обновляет статус задачи",
                 "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "issue_key": {"type": "string", "description": "Ключ задачи (например, TEST-123)"},
-                        "transition_name": {"type": "string", "description": "Название перехода статуса"}
-                    },
-                    "required": ["issue_key"]
+                    "issue_key": {"type": "string", "description": "Ключ задачи (например, TEST-123)"},
+                    "transition_name": {"type": "string", "description": "Название перехода статуса"}
                 }
             },
             {
                 "name": "get_issue_details",
                 "description": "Получает детальную информацию о задаче",
                 "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "issue_key": {"type": "string", "description": "Ключ задачи"}
-                    },
-                    "required": ["issue_key"]
+                    "issue_key": {"type": "string", "description": "Ключ задачи"}
                 }
             }
         ]
