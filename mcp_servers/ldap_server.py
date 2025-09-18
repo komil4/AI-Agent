@@ -312,7 +312,8 @@ class LDAPMCPServer:
         """Ищет пользователя через инструмент"""
         try:
             limit = arguments.get('limit', 20)
-            username = arguments.get('username')
+            # Иногда название параметра бывает user или name
+            username = arguments.get('username') or arguments.get('user') or arguments.get('name')
             email = arguments.get('email')
             
             if not username and not email:

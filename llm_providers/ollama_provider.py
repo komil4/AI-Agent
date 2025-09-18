@@ -257,10 +257,29 @@ class OllamaProvider(BaseLLMProvider):
                 
                 # Проверяем, что это валидный ответ
                 if 'action' in parsed:
+                    # Иногда LLM вставляет name в action, а не в tool
+                    # Исправляем: если action совпадает с каким-либо tool.name, то это tool, а action=call_tool
+                    action_value = parsed.get('action')
+                    if isinstance(action_value, str):
+                        for tool in tools:
+                            if action_value == tool.get('name'):
+                                parsed['tool'] = action_value
+                                parsed['action'] = 'call_tool'
+                                break
                     return parsed
                 elif 'tool' in parsed:
                     # Конвертируем старый формат в новый
                     parsed['action'] = 'call_tool'
+                    return parsed
+                elif 'name' in parsed:
+                    # Иногда LLM кладет tool name в поле name вместо tool/action
+                    # Если name совпадает с каким-либо tool, считаем это tool
+                    name_value = parsed.get('name')
+                    for tool in tools:
+                        if name_value == tool.get('name'):
+                            parsed['tool'] = name_value
+                            parsed['action'] = 'call_tool'
+                            break
                     return parsed
                 else:
                     raise ValueError("Неверный формат JSON ответа")

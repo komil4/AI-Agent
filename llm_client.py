@@ -356,59 +356,49 @@ class LLMClient:
         # Форматируем результат в зависимости от структуры данных
         return self._format_any_data(tool_result, tool_name, server_name)
     
-    def _format_any_data(self, data: Any, tool_name: str = "unknown", server_name: str = "unknown", indent: int = 0) -> str:
-        """Рекурсивно форматирует любые данные в красивый текст"""
+    async def _format_any_data(self, data: Any, tool_name: str = "unknown", server_name: str = "unknown", indent: int = 0) -> str:
+        """
+        Рекурсивно форматирует любые данные в красивый текст.
+        В конце дополнительно вызывает LLM для улучшения читабельности результата.
+        """
         indent_str = "  " * indent
-        
+
         if data is None:
-            return f"{indent_str}📋 Результат: пусто"
-        
-        if isinstance(data, bool):
-            return f"{indent_str}📋 Результат: {'✅ Да' if data else '❌ Нет'}"
-        
-        if isinstance(data, (str, int, float)):
-            return f"{indent_str}📋 Результат: {data}"
-        
-        if isinstance(data, list):
+            result_text = f"{indent_str}📋 Результат: пусто"
+        elif isinstance(data, bool):
+            result_text = f"{indent_str}📋 Результат: {'✅ Да' if data else '❌ Нет'}"
+        elif isinstance(data, (str, int, float)):
+            result_text = f"{indent_str}📋 Результат: {data}"
+        elif isinstance(data, list):
             if len(data) == 0:
-                return f"{indent_str}📋 Результат: пустой список"
-            
-            # Определяем контекст для списка
-            context_emoji = self._get_context_emoji(tool_name, server_name)
-            result_text = f"{indent_str}{context_emoji} Найдено {len(data)} элементов:\n"
-            
-            # Показываем первые 15 элементов для лучшей читаемости
-            max_items = 15
-            for i, item in enumerate(data[:max_items], 1):
-                if isinstance(item, dict):
-                    # Для словарей показываем ключевые поля
-                    key_fields = self._extract_key_fields(item, tool_name)
-                    if key_fields:
-                        result_text += f"{indent_str}  {i}. {key_fields}\n"
+                result_text = f"{indent_str}📋 Результат: пустой список"
+            else:
+                context_emoji = self._get_context_emoji(tool_name, server_name)
+                result_text = f"{indent_str}{context_emoji} Найдено {len(data)} элементов:\n"
+                max_items = 15
+                for i, item in enumerate(data[:max_items], 1):
+                    if isinstance(item, dict):
+                        key_fields = self._extract_key_fields(item, tool_name)
+                        if key_fields:
+                            result_text += f"{indent_str}  {i}. {key_fields}\n"
+                        else:
+                            # рекурсивный вызов должен быть асинхронным
+                            formatted = await self._format_any_data(item, tool_name, server_name, indent + 2)
+                            result_text += f"{indent_str}  {i}. {formatted}\n"
+                    elif isinstance(item, (str, int, float)):
+                        result_text += f"{indent_str}  {i}. {item}\n"
                     else:
-                        result_text += f"{indent_str}  {i}. {self._format_any_data(item, tool_name, server_name, indent + 2)}\n"
-                elif isinstance(item, (str, int, float)):
-                    result_text += f"{indent_str}  {i}. {item}\n"
-                else:
-                    result_text += f"{indent_str}  {i}. {self._format_any_data(item, tool_name, server_name, indent + 2)}\n"
-            
-            if len(data) > max_items:
-                result_text += f"{indent_str}  ... и еще {len(data) - max_items} элементов\n"
-            
-            return result_text
-        
-        if isinstance(data, dict):
-            # Определяем контекст для словаря
+                        formatted = await self._format_any_data(item, tool_name, server_name, indent + 2)
+                        result_text += f"{indent_str}  {i}. {formatted}\n"
+                if len(data) > max_items:
+                    result_text += f"{indent_str}  ... и еще {len(data) - max_items} элементов\n"
+        elif isinstance(data, dict):
             context_emoji = self._get_context_emoji(tool_name, server_name)
             result_text = f"{indent_str}{context_emoji} Результат:\n"
-            
-            # Сортируем ключи для лучшей читаемости
             sorted_keys = self._sort_dict_keys(data)
-            
             for key in sorted_keys:
                 value = data[key]
                 formatted_key = self._format_key_name(key)
-                
                 if isinstance(value, (str, int, float, bool)) or value is None:
                     formatted_value = self._format_simple_value(value)
                     result_text += f"{indent_str}  {formatted_key}: {formatted_value}\n"
@@ -416,22 +406,40 @@ class LLMClient:
                     if len(value) == 0:
                         result_text += f"{indent_str}  {formatted_key}: пустой список\n"
                     elif len(value) <= 3 and all(isinstance(item, (str, int, float)) for item in value):
-                        # Короткие списки простых значений показываем в одну строку
                         formatted_values = [self._format_simple_value(item) for item in value]
                         result_text += f"{indent_str}  {formatted_key}: {', '.join(formatted_values)}\n"
                     else:
                         result_text += f"{indent_str}  {formatted_key}:\n"
-                        result_text += self._format_any_data(value, tool_name, server_name, indent + 2)
+                        formatted = await self._format_any_data(value, tool_name, server_name, indent + 2)
+                        result_text += formatted
                 elif isinstance(value, dict):
                     result_text += f"{indent_str}  {formatted_key}:\n"
-                    result_text += self._format_any_data(value, tool_name, server_name, indent + 2)
+                    formatted = await self._format_any_data(value, tool_name, server_name, indent + 2)
+                    result_text += formatted
                 else:
-                    result_text += f"{indent_str}  {formatted_key}: {self._format_any_data(value, tool_name, server_name, indent + 2)}\n"
-            
-            return result_text
-        
-        # Для других типов данных
-        return f"{indent_str}📋 Результат: {str(data)}"
+                    formatted = await self._format_any_data(value, tool_name, server_name, indent + 2)
+                    result_text += f"{indent_str}  {formatted_key}: {formatted}\n"
+        else:
+            result_text = f"{indent_str}📋 Результат: {str(data)}"
+
+        # --- LLM post-processing for beautification ---
+        try:
+            from llm_providers import get_default_llm_provider
+            llm = get_default_llm_provider()
+            beautify_prompt = (
+                "Преобразуй следующий результат в более красивый, структурированный и читабельный вид для пользователя. "
+                "Используй списки, эмодзи, заголовки, если это уместно. Не добавляй лишних пояснений, только результат.\n\n"
+                f"Результат:\n{result_text}"
+            )
+            beautified = await llm.simple_completion(beautify_prompt, system_prompt="Ты помощник, который красиво форматирует результаты для пользователя.")
+            if beautified and isinstance(beautified, str) and len(beautified) > 0:
+                return beautified
+        except Exception as e:
+            # Если LLM не сработал, возвращаем обычный результат
+            import logging
+            logging.getLogger("llm_client").warning(f"LLM beautify failed: {e}")
+
+        return result_text
     
     def _get_context_emoji(self, tool_name: str, server_name: str) -> str:
         """Возвращает подходящий emoji в зависимости от контекста"""
