@@ -657,6 +657,8 @@
                     <div class="card-header">
                         <h5 class="mb-0">
                             <i class="fas fa-robot"></i> LLM Конфигурация
+                            <span class="status-indicator" id="llm-status-indicator"></span>
+                            <small id="llm-status-text">Проверка...</small>
                         </h5>
                     </div>
                     <div class="card-body">
@@ -728,6 +730,9 @@
             `;
             
             document.getElementById('configContent').innerHTML = html;
+            
+            // Проверяем статус LLM
+            checkLLMStatus();
         }
 
         function getProviderIcon(providerName) {
@@ -937,6 +942,39 @@
                 }
             } catch (error) {
                 alert('Ошибка соединения: ' + error.message);
+            }
+        }
+
+        async function checkLLMStatus() {
+            try {
+                const response = await fetch('/api/llm/health');
+                const data = await response.json();
+                
+                const statusIndicator = document.getElementById('llm-status-indicator');
+                const statusText = document.getElementById('llm-status-text');
+                
+                if (statusIndicator && statusText) {
+                    statusIndicator.className = 'status-indicator';
+                    
+                    if (data.status === 'healthy') {
+                        statusIndicator.classList.add('status-enabled');
+                        statusText.textContent = 'Работает';
+                    } else if (data.status === 'unhealthy') {
+                        statusIndicator.classList.add('status-disabled');
+                        statusText.textContent = 'Ошибка: ' + (data.error || 'Неизвестная ошибка');
+                    } else {
+                        statusIndicator.classList.add('status-disabled');
+                        statusText.textContent = 'Неизвестный статус';
+                    }
+                }
+            } catch (error) {
+                const statusIndicator = document.getElementById('llm-status-indicator');
+                const statusText = document.getElementById('llm-status-text');
+                
+                if (statusIndicator && statusText) {
+                    statusIndicator.className = 'status-indicator status-disabled';
+                    statusText.textContent = 'Ошибка проверки: ' + error.message;
+                }
             }
         }
     </script>

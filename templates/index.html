@@ -511,9 +511,9 @@
             const element = document.getElementById(elementId);
             element.className = 'status-indicator';
             
-            if (status === 'connected') {
+            if (status === 'connected' || status === 'healthy') {
                 element.classList.add('status-connected');
-            } else if (status === 'error') {
+            } else if (status === 'error' || status === 'unhealthy') {
                 element.classList.add('status-error');
             } else {
                 element.classList.add('status-warning');
