@@ -8,7 +8,7 @@ import json
 import logging
 from typing import Dict, Any, List, Optional
 from config.llm_config import LLMProvider, llm_config_manager
-from llm_providers.provider_factory import LLMProviderFactory
+from llm_providers import LLMProviderFactory
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -170,18 +170,13 @@ class LLMClient:
         
         # Системное сообщение
         system_prompt = """
-Ты - полезный AI ассистент, который работает с MCP серверами для Jira, Atlassian, GitLab и LDAP.
+Ты - полезный AI ассистент, который работает с MCP серверами. У тебя есть доступ к различным инструментам для работы с Jira, GitLab, Confluence и LDAP.
 
 ВАЖНО: ВСЕГДА отвечай ТОЛЬКО на русском языке. Никогда не используй английский язык в ответах.
 
-Твои возможности:
-- Работа с задачами Jira (создание, поиск, обновление)
-- Управление проектами GitLab (список, коммиты, merge requests)
-- Работа с Confluence (поиск и создание страниц)
-- Поиск пользователей в LDAP/Active Directory
+Доступные инструменты будут предоставлены в контексте. Используй их для выполнения запросов пользователя.
 
-Если пользователь просит выполнить действие, которое требует использования инструментов, используй доступные инструменты.
-Если это общий вопрос, ответь полезно и дружелюбно на русском языке.
+Отвечай на русском языке кратко и по делу.
 """
         
         # Добавляем контекст из чата, если он есть
@@ -193,7 +188,7 @@ class LLMClient:
         messages.append({"role": "system", "content": system_prompt})
         
         # Сообщение пользователя
-        messages.append({"role": "user", "content": message})
+        #messages.append({"role": "user", "content": message})
         
         return messages
     
@@ -205,8 +200,6 @@ class LLMClient:
         system_prompt = """
 Ты - полезный AI ассистент, который работает с MCP серверами.
 У тебя есть доступ к различным инструментам для работы с Jira, GitLab, Confluence и LDAP.
-
-ВАЖНО: ВСЕГДА отвечай ТОЛЬКО на русском языке. Никогда не используй английский язык в ответах.
 
 Доступные инструменты будут предоставлены в контексте.
 Используй их для выполнения запросов пользователя.
@@ -223,7 +216,7 @@ class LLMClient:
         messages.append({"role": "system", "content": system_prompt})
         
         # Сообщение пользователя
-        messages.append({"role": "user", "content": message})
+        #messages.append({"role": "user", "content": message})
         
         return messages
     
