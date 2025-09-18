@@ -243,7 +243,17 @@ class OllamaProvider(BaseLLMProvider):
                 if cleaned_response.endswith('```'):
                     cleaned_response = cleaned_response[:-3]
                 cleaned_response = cleaned_response.strip()
-                
+
+                # Проверяем, находится ли JSON внутри <think>...</think>
+                import re
+                think_blocks = list(re.finditer(r'<think>(.*?)</think>', cleaned_response, re.DOTALL | re.IGNORECASE))
+                if think_blocks:
+                    # Если весь ответ внутри <think>, не ищем JSON
+                    if len(think_blocks) == 1 and think_blocks[0].start() == 0 and think_blocks[0].end() == len(cleaned_response):
+                        raise ValueError("JSON не найден в ответе (внутри <think>)")
+                    # Удаляем все <think>...</think> блоки из текста
+                    cleaned_response = re.sub(r'<think>.*?</think>', '', cleaned_response, flags=re.DOTALL | re.IGNORECASE).strip()
+
                 # Ищем JSON в ответе
                 if cleaned_response.startswith('{') and cleaned_response.endswith('}'):
                     json_text = cleaned_response
