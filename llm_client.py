@@ -157,8 +157,19 @@ class LLMClient:
                     )
                 
                 return self._format_tool_result(tool_result, response)
-            else:
+            elif response.get('action') == 'respond':
                 return response.get('message', 'Нет ответа')
+            else:
+                # Если ответ не в ожидаемом формате, пытаемся извлечь JSON
+                if isinstance(response, str):
+                    json_response = self._extract_json_from_text(response, available_tools)
+                    if json_response and json_response.get('action') == 'call_tool':
+                        # Рекурсивно обрабатываем извлеченный JSON
+                        return await self.process_with_tools({'user_message': user_message, 'user_context': user_context})
+                    else:
+                        return response
+                else:
+                    return response.get('message', 'Нет ответа')
                 
         except Exception as e:
             logger.error(f"❌ Ошибка обработки с инструментами: {e}")
@@ -262,6 +273,76 @@ class LLMClient:
                     context_parts.append(f"{key}: {value}")
         
         return "\n".join(context_parts) if context_parts else ""
+    
+    def _extract_json_from_text(self, text: str, available_tools: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Пытается извлечь JSON из текстового ответа Llama2"""
+        try:
+            import re
+            import json
+            
+            # Очищаем текст
+            cleaned_text = text.strip()
+            
+            # Удаляем возможные markdown блоки
+            if cleaned_text.startswith('```json'):
+                cleaned_text = cleaned_text[7:]
+            if cleaned_text.endswith('```'):
+                cleaned_text = cleaned_text[:-3]
+            cleaned_text = cleaned_text.strip()
+            
+            # Ищем JSON объект
+            json_match = re.search(r'\{[^{}]*\}', cleaned_text)
+            if json_match:
+                json_text = json_match.group()
+                parsed = json.loads(json_text)
+                
+                # Проверяем, что это валидный ответ с инструментами
+                if 'action' in parsed or 'tool' in parsed:
+                    if 'action' not in parsed:
+                        parsed['action'] = 'call_tool'
+                    return parsed
+            
+            # Если JSON не найден, пытаемся создать его из контекста
+            if any(keyword in text.lower() for keyword in ['создай', 'найди', 'покажи', 'получи', 'обнови', 'удали']):
+                tool_name = self._extract_tool_name_from_text(text, available_tools)
+                if tool_name:
+                    return {
+                        'action': 'call_tool',
+                        'server': 'unknown',
+                        'tool': tool_name,
+                        'arguments': {}
+                    }
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Не удалось извлечь JSON из текста: {e}")
+            return None
+    
+    def _extract_tool_name_from_text(self, text: str, available_tools: List[Dict[str, Any]]) -> Optional[str]:
+        """Извлекает название инструмента из текста"""
+        text_lower = text.lower()
+        
+        # Сопоставление ключевых слов с инструментами
+        tool_keywords = {
+            'create_issue': ['создай задачу', 'создать задачу', 'новая задача', 'создать issue'],
+            'search_issues': ['найди задачи', 'поиск задач', 'найти issue', 'поиск issue'],
+            'list_issues': ['покажи задачи', 'список задач', 'все задачи', 'показать issue'],
+            'update_issue': ['обнови задачу', 'изменить задачу', 'обновить issue', 'изменить issue'],
+            'create_project': ['создай проект', 'создать проект', 'новый проект'],
+            'list_projects': ['покажи проекты', 'список проектов', 'все проекты'],
+            'create_merge_request': ['создай merge request', 'создать merge request', 'новый merge request'],
+            'list_commits': ['покажи коммиты', 'список коммитов', 'все коммиты', 'история коммитов']
+        }
+        
+        for tool_name, keywords in tool_keywords.items():
+            if any(keyword in text_lower for keyword in keywords):
+                # Проверяем, есть ли такой инструмент в списке
+                for tool in available_tools:
+                    if tool['name'] == tool_name:
+                        return tool_name
+        
+        return None
     
     def _format_tool_result(self, tool_result: Dict[str, Any], original_response: Dict[str, Any]) -> str:
         """Форматирует результат выполнения инструмента с гибкой обработкой любых структур данных"""

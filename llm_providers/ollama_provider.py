@@ -81,6 +81,10 @@ class OllamaProvider(BaseLLMProvider):
     async def generate_with_tools(self, user_message: str, messages: List[Dict[str, str]], tools: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
         """Генерирует ответ с поддержкой инструментов"""
         try:
+            # Для Llama2 и других старых моделей принудительно используем fallback
+            if 'llama2' in self.model.lower() or 'llama' in self.model.lower():
+                return await self._fallback_to_simple_generation(user_message, messages, tools, **kwargs)
+            
             # Проверяем, поддерживает ли модель инструменты
             if not await self._supports_tools():
                 return await self._fallback_to_simple_generation(user_message, messages, tools, **kwargs)
@@ -192,21 +196,27 @@ class OllamaProvider(BaseLLMProvider):
                     tools_info.append(f"{tool['name']}: {tool['description']}")
             tools_text = "\n".join(tools_info)
             
-            system_message = f"""
-            
+            system_message = f"""Ты - AI ассистент с доступом к инструментам.
+
 Доступные инструменты:
 {tools_text}
 
-Твоя задача:
-1. Анализировать запрос пользователя и определять необходимые инструменты
-2. Генерировать ТОЧНО правильный JSON-запрос для вызова инструмента
-3. Анализировать результаты и предоставлять четкий ответ
-4. Если одного инструмента недостаточно - выполнять последовательные вызовы
+ВАЖНО: Ты должен отвечать СТРОГО в формате JSON. Никаких объяснений, советов или дополнительного текста!
 
 Формат ответа для вызова инструментов:
-{"server": "имя_сервера", "tool": "имя_инструмента", "arguments": {"параметр": "значение"}}
+{{"action": "call_tool", "server": "имя_сервера", "tool": "имя_инструмента", "arguments": {{"параметр": "значение"}}}}
 
-Отвечай ТОЛЬКО JSON-объектом для вызова инструментов, без дополнительного текста."""
+Если не нужно использовать инструменты, отвечай:
+{{"action": "respond", "message": "твой ответ"}}
+
+ПРИМЕРЫ:
+Запрос: "Создай задачу в Jira"
+Ответ: {{"action": "call_tool", "server": "jira", "tool": "create_issue", "arguments": {{"summary": "Новая задача", "description": "Описание задачи"}}}}
+
+Запрос: "Привет, как дела?"
+Ответ: {{"action": "respond", "message": "Привет! У меня все хорошо, спасибо!"}}
+
+Отвечай ТОЛЬКО JSON-объектом!"""
             
             # Добавляем системное сообщение
             enhanced_messages = messages + [{"role": "system", "content": system_message}]
@@ -216,12 +226,22 @@ class OllamaProvider(BaseLLMProvider):
             # Используем простую генерацию
             response = await self.generate_response(enhanced_messages, **kwargs)
             
+            # Логируем ответ для отладки
+            print(f"🔍 Llama2 ответ: {response[:200]}...")
+            
             # Пытаемся распарсить JSON ответ
             try:
                 # Очищаем ответ от возможных лишних символов
                 cleaned_response = response.strip()
                 
-                # Ищем JSON в ответе, если он не весь ответ
+                # Удаляем возможные markdown блоки
+                if cleaned_response.startswith('```json'):
+                    cleaned_response = cleaned_response[7:]
+                if cleaned_response.endswith('```'):
+                    cleaned_response = cleaned_response[:-3]
+                cleaned_response = cleaned_response.strip()
+                
+                # Ищем JSON в ответе
                 if cleaned_response.startswith('{') and cleaned_response.endswith('}'):
                     json_text = cleaned_response
                 else:
@@ -234,13 +254,52 @@ class OllamaProvider(BaseLLMProvider):
                         raise ValueError("JSON не найден в ответе")
                 
                 parsed = json.loads(json_text)
-                if 'tool' in parsed:
+                
+                # Проверяем, что это валидный ответ
+                if 'action' in parsed:
+                    return parsed
+                elif 'tool' in parsed:
+                    # Конвертируем старый формат в новый
                     parsed['action'] = 'call_tool'
                     return parsed
+                else:
+                    raise ValueError("Неверный формат JSON ответа")
+                    
             except Exception as e:
                 print(f"⚠️ Не удалось распарсить JSON ответ: {e}")
                 print(f"Ответ: {response}")
-                pass
+                
+                # Пытаемся извлечь JSON более агрессивно
+                try:
+                    import re
+                    # Ищем JSON с action
+                    json_match = re.search(r'\{[^{}]*"action"[^{}]*\}', response)
+                    if json_match:
+                        parsed = json.loads(json_match.group())
+                        return parsed
+                    
+                    # Ищем любой JSON объект
+                    json_match = re.search(r'\{[^{}]*\}', response)
+                    if json_match:
+                        parsed = json.loads(json_match.group())
+                        if 'tool' in parsed or 'action' in parsed:
+                            if 'action' not in parsed:
+                                parsed['action'] = 'call_tool'
+                            return parsed
+                except:
+                    pass
+                
+                # Если все еще не JSON, пытаемся создать JSON из текста
+                if any(keyword in response.lower() for keyword in ['создай', 'найди', 'покажи', 'получи', 'обнови', 'удали']):
+                    # Пытаемся определить инструмент по контексту
+                    tool_name = self._extract_tool_from_text(response, tools)
+                    if tool_name:
+                        return {
+                            'action': 'call_tool',
+                            'server': 'unknown',
+                            'tool': tool_name,
+                            'arguments': {}
+                        }
             
             # Если не JSON, возвращаем как обычный ответ
             return {
@@ -250,6 +309,31 @@ class OllamaProvider(BaseLLMProvider):
             
         except Exception as e:
             raise Exception(f"Ошибка fallback генерации: {str(e)}")
+    
+    def _extract_tool_from_text(self, text: str, tools: List[Dict[str, Any]]) -> Optional[str]:
+        """Пытается извлечь название инструмента из текста"""
+        text_lower = text.lower()
+        
+        # Простое сопоставление по ключевым словам
+        tool_keywords = {
+            'create_issue': ['создай задачу', 'создать задачу', 'новая задача', 'создать issue'],
+            'search_issues': ['найди задачи', 'поиск задач', 'найти issue', 'поиск issue'],
+            'list_issues': ['покажи задачи', 'список задач', 'все задачи', 'показать issue'],
+            'update_issue': ['обнови задачу', 'изменить задачу', 'обновить issue', 'изменить issue'],
+            'create_project': ['создай проект', 'создать проект', 'новый проект'],
+            'list_projects': ['покажи проекты', 'список проектов', 'все проекты'],
+            'create_merge_request': ['создай merge request', 'создать merge request', 'новый merge request'],
+            'list_commits': ['покажи коммиты', 'список коммитов', 'все коммиты', 'история коммитов']
+        }
+        
+        for tool_name, keywords in tool_keywords.items():
+            if any(keyword in text_lower for keyword in keywords):
+                # Проверяем, есть ли такой инструмент в списке
+                for tool in tools:
+                    if tool['name'] == tool_name:
+                        return tool_name
+        
+        return None
     
     async def check_health(self) -> Dict[str, Any]:
         """Проверяет доступность Ollama API"""
