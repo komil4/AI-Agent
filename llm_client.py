@@ -461,6 +461,13 @@ class LLMClient:
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": str(result_text)}
                 ], temperature = 0.7)
+
+                # Если beautified содержит блок <think>...</think>, удаляем его
+                import re
+                beautified = re.sub(r'<think>.*?</think>', '', beautified, flags=re.DOTALL | re.IGNORECASE).strip()
+
+
+                print(f"🔍 LLM beautify: {beautified}")
                 if beautified and isinstance(beautified, str) and len(beautified) > 0:
                     return beautified
             except Exception as e:

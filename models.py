@@ -24,6 +24,7 @@ class HealthResponse(BaseModel):
     jira: ServiceStatus
     atlassian: ServiceStatus
     gitlab: ServiceStatus
+    onec: ServiceStatus
     ldap: Optional[ServiceStatus] = None
 
 # Auth models

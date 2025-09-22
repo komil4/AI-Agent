@@ -39,6 +39,26 @@ class MCPClient:
         """Загружает конфигурацию MCP серверов"""
         self.mcp_config = self.config_manager.get_service_config('mcp_servers')
     
+    async def _connect_onec_server(self):
+        """Подключается к 1С MCP серверу"""
+        if not MCP_AVAILABLE:
+            logger.warning("⚠️ MCP библиотека недоступна, пропускаем подключение к 1С MCP серверу")
+            return
+            
+        try:
+            # Для 1С используем встроенный сервер
+            onec_server = self.builtin_servers.get('onec')
+            if onec_server:
+                self.sessions['onec'] = onec_server
+                # Используем предопределенные инструменты
+                self.available_tools['onec'] = self.server_tools['onec']
+                logger.info("✅ 1С MCP сервер подключен (встроенный)")
+            else:
+                logger.warning("⚠️ 1С MCP сервер не найден")
+                    
+        except Exception as e:
+            logger.error(f"❌ Ошибка подключения к 1С MCP серверу: {e}")
+    
     def _define_tools(self):
         """Определяет предопределенные инструменты для каждого сервера"""
         self.server_tools = {
@@ -96,6 +116,22 @@ class MCPClient:
                     }
                 }
             ],
+            'onec': [
+                {
+                    "name": "get_user_tasks",
+                    "description": "Получает список задач пользователя в 1С",
+                    "parameters": {
+                        "user": {"type": "string", "description": "Имя пользователя для получения задач"}
+                    }
+                },
+                {
+                    "name": "get_task_info",
+                    "description": "Получает детальную информацию по задаче в 1С",
+                    "parameters": {
+                        "task_id": {"type": "string", "description": "Идентификатор задачи"}
+                    }
+                }
+            ],
             'confluence': [
                 {
                     "name": "search_pages",
@@ -133,11 +169,13 @@ class MCPClient:
             from mcp_servers.jira_server import JiraMCPServer
             from mcp_servers.gitlab_server import GitLabMCPServer
             from mcp_servers.atlassian_server import AtlassianMCPServer
+            from mcp_servers.onec_server import OneCMCPServer
             
             servers = {
                 'jira': JiraMCPServer(),
                 'gitlab': GitLabMCPServer(),
-                'confluence': AtlassianMCPServer()
+                'confluence': AtlassianMCPServer(),
+                'onec': OneCMCPServer()
             }
             
             # Проверяем, включен ли LDAP в конфигурации
@@ -172,6 +210,10 @@ class MCPClient:
             # Confluence MCP сервер
             if self.mcp_config.get('confluence', {}).get('enabled', False):
                 await self._connect_confluence_server()
+            
+            # 1С MCP сервер
+            if self.mcp_config.get('onec', {}).get('enabled', False):
+                await self._connect_onec_server()
                 
             logger.info(f"✅ Инициализировано {len(self.sessions)} MCP серверов")
             
@@ -312,6 +354,8 @@ class MCPClient:
                 return server.gl is not None
             elif server_name == 'confluence':
                 return server.confluence is not None
+            elif server_name == 'onec':
+                return server.auth is not None
             elif server_name == 'ldap':
                 # Проверяем, включен ли LDAP в конфигурации
                 ad_config = self.config_manager.get_service_config('active_directory')

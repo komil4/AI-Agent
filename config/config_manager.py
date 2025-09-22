@@ -36,6 +36,13 @@ class ConfigManager:
                 "token": "",
                 "enabled": False
             },
+            "onec": {
+                "url": "",
+                "api_path": "/api/tasks",
+                "username": "",
+                "password": "",
+                "enabled": False
+            },
             "llm": {
                 "provider": "ollama",  # openai, anthropic, google, ollama, local
                 "providers": {
@@ -113,6 +120,13 @@ class ConfigManager:
                     "url": "",
                     "username": "",
                     "api_token": ""
+                },
+                "onec": {
+                    "enabled": False,
+                    "url": "",
+                    "api_path": "/api/tasks",
+                    "username": "",
+                    "password": ""
                 }
             },
             "last_updated": None,
@@ -210,6 +224,8 @@ class ConfigManager:
                 return self._test_atlassian_connection(service_config)
             elif service == "gitlab":
                 return self._test_gitlab_connection(service_config)
+            elif service == "onec":
+                return self._test_onec_connection(service_config)
             elif service == "llm":
                 return self._test_llm_connection(service_config)
             elif service == "redis":
@@ -345,6 +361,43 @@ class ConfigManager:
             return {
                 "success": False,
                 "message": f"Ошибка подключения к GitLab: {str(e)}"
+            }
+    
+    def _test_onec_connection(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Тестирует подключение к 1С"""
+        try:
+            import requests
+            from requests.auth import HTTPBasicAuth
+            
+            url = config.get("url", "")
+            api_path = config.get("api_path", "/api/tasks")
+            username = config.get("username", "")
+            password = config.get("password", "")
+            
+            if not all([url, username, password]):
+                return {
+                    "success": False,
+                    "message": "Не все обязательные поля заполнены"
+                }
+            
+            # Тестируем HTTP подключение к 1С
+            auth = HTTPBasicAuth(username, password)
+            response = requests.get(f"{url}{api_path}", auth=auth, timeout=10)
+            
+            if response.status_code == 200:
+                return {
+                    "success": True,
+                    "message": "Подключение к 1С успешно"
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"Ошибка API 1С: {response.status_code}"
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Ошибка подключения к 1С: {str(e)}"
             }
     
     def _test_llm_connection(self, config: Dict[str, Any]) -> Dict[str, Any]:

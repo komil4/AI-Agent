@@ -262,21 +262,25 @@
                 <!-- Статус сервисов -->
                 <h6><i class="fas fa-server"></i> Статус сервисов</h6>
                 <div id="services-status">
-                    <div class="mb-2">
+                    <div class="mb-2" data-service="llm">
                         <span class="status-indicator" id="llm-status"></span>
                         <small>LLM Сервер</small>
                     </div>
-                    <div class="mb-2">
+                    <div class="mb-2" data-service="jira">
                         <span class="status-indicator" id="jira-status"></span>
                         <small>Jira MCP</small>
                     </div>
-                    <div class="mb-2">
+                    <div class="mb-2" data-service="atlassian">
                         <span class="status-indicator" id="atlassian-status"></span>
                         <small>Confluence MCP</small>
                     </div>
-                    <div class="mb-2">
+                    <div class="mb-2" data-service="gitlab">
                         <span class="status-indicator" id="gitlab-status"></span>
                         <small>GitLab MCP</small>
+                    </div>
+                    <div class="mb-2" data-service="onec">
+                        <span class="status-indicator" id="onec-status"></span>
+                        <small>1С MCP</small>
                     </div>
                 </div>
                 
@@ -285,20 +289,23 @@
                 <!-- Быстрые команды -->
                 <h6><i class="fas fa-bolt"></i> Быстрые команды</h6>
                 <div class="d-grid gap-2">
-                    <button class="btn btn-outline-primary btn-sm" onclick="sendQuickCommand('создай задачу в jira')">
+                    <button class="btn btn-outline-primary btn-sm" onclick="sendQuickCommand('создай задачу в jira')" data-service="jira">
                         <i class="fas fa-plus"></i> Создать задачу
                     </button>
-                    <button class="btn btn-outline-success btn-sm" onclick="sendQuickCommand('покажи все задачи')">
+                    <button class="btn btn-outline-success btn-sm" onclick="sendQuickCommand('покажи все задачи')" data-service="jira">
                         <i class="fas fa-list"></i> Список задач
                     </button>
-                    <button class="btn btn-outline-primary btn-sm" onclick="showCodeAnalysisForm()">
+                    <button class="btn btn-outline-primary btn-sm" onclick="showCodeAnalysisForm()" data-service="jira">
                         <i class="fas fa-chart-line"></i> Анализ кода
                     </button>
-                    <button class="btn btn-outline-info btn-sm" onclick="sendQuickCommand('создай страницу в confluence')">
+                    <button class="btn btn-outline-info btn-sm" onclick="sendQuickCommand('создай страницу в confluence')" data-service="atlassian">
                         <i class="fas fa-file"></i> Создать страницу
                     </button>
-                    <button class="btn btn-outline-warning btn-sm" onclick="sendQuickCommand('покажи проекты в gitlab')">
+                    <button class="btn btn-outline-warning btn-sm" onclick="sendQuickCommand('покажи проекты в gitlab')" data-service="gitlab">
                         <i class="fas fa-code-branch"></i> Проекты GitLab
+                    </button>
+                    <button class="btn btn-outline-info btn-sm" onclick="sendQuickCommand('покажи задачи пользователя admin')" data-service="onec">
+                        <i class="fas fa-tasks"></i> Задачи 1С
                     </button>
                     <button class="btn btn-outline-secondary btn-sm" onclick="sendQuickCommand('помощь')">
                         <i class="fas fa-question-circle"></i> Помощь
@@ -310,7 +317,7 @@
                 <!-- Подсказки с промтами -->
                 <h6><i class="fas fa-lightbulb"></i> Популярные команды</h6>
                 <div class="prompt-suggestions">
-                    <div class="prompt-category mb-3">
+                    <div class="prompt-category mb-3" data-service="jira">
                         <small class="text-muted fw-bold">🔧 Jira</small>
                         <div class="d-flex flex-wrap gap-1 mt-1">
                             <span class="badge bg-light text-dark prompt-badge" onclick="sendQuickCommand('найди задачи по авторизации')">
@@ -331,7 +338,7 @@
                         </div>
                     </div>
                     
-                    <div class="prompt-category mb-3">
+                    <div class="prompt-category mb-3" data-service="atlassian">
                         <small class="text-muted fw-bold">📄 Confluence</small>
                         <div class="d-flex flex-wrap gap-1 mt-1">
                             <span class="badge bg-light text-dark prompt-badge" onclick="sendQuickCommand('найди страницы по API')">
@@ -352,7 +359,7 @@
                         </div>
                     </div>
                     
-                    <div class="prompt-category mb-3">
+                    <div class="prompt-category mb-3" data-service="gitlab">
                         <small class="text-muted fw-bold">🐙 GitLab</small>
                         <div class="d-flex flex-wrap gap-1 mt-1">
                             <span class="badge bg-light text-dark prompt-badge" onclick="sendQuickCommand('найди проекты по ключевому слову')">
@@ -369,6 +376,21 @@
                             </span>
                             <span class="badge bg-light text-dark prompt-badge" onclick="sendQuickCommand('создай merge request')">
                                 создать MR
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="prompt-category mb-3" data-service="onec">
+                        <small class="text-muted fw-bold">📊 1С</small>
+                        <div class="d-flex flex-wrap gap-1 mt-1">
+                            <span class="badge bg-light text-dark prompt-badge" onclick="sendQuickCommand('покажи задачи пользователя admin')">
+                                задачи пользователя
+                            </span>
+                            <span class="badge bg-light text-dark prompt-badge" onclick="sendQuickCommand('покажи информацию по задаче 123')">
+                                информация по задаче
+                            </span>
+                            <span class="badge bg-light text-dark prompt-badge" onclick="sendQuickCommand('найди задачи в 1с')">
+                                поиск задач
                             </span>
                         </div>
                     </div>
@@ -401,7 +423,7 @@
                 <div class="chat-container" id="chat-container">
                     <div class="message bot-message">
                         <strong><i class="fas fa-robot"></i> AI Ассистент:</strong><br>
-                        👋 Привет! Я ваш AI ассистент с поддержкой MCP серверов для Jira, Confluence и GitLab. 
+                        👋 Привет! Я ваш AI ассистент с поддержкой MCP серверов для Jira, Confluence, GitLab и 1С. 
                         Напишите что хотите сделать, или используйте быстрые команды слева.
                     </div>
                     
@@ -494,13 +516,22 @@
         });
 
         function checkServicesStatus() {
-            fetch('/api/health')
+            fetch('/api/services/status')
                 .then(response => response.json())
                 .then(data => {
+                    // Обновляем статусы
                     updateServiceStatus('llm-status', data.llm.status);
                     updateServiceStatus('jira-status', data.jira.status);
                     updateServiceStatus('atlassian-status', data.atlassian.status);
                     updateServiceStatus('gitlab-status', data.gitlab.status);
+                    updateServiceStatus('onec-status', data.onec.status);
+                    
+                    // Скрываем/показываем сервисы в зависимости от их статуса
+                    updateServiceVisibility('llm', data.llm.enabled);
+                    updateServiceVisibility('jira', data.jira.enabled);
+                    updateServiceVisibility('atlassian', data.atlassian.enabled);
+                    updateServiceVisibility('gitlab', data.gitlab.enabled);
+                    updateServiceVisibility('onec', data.onec.enabled);
                 })
                 .catch(error => {
                     console.error('Ошибка проверки статуса:', error);
@@ -518,6 +549,14 @@
             } else {
                 element.classList.add('status-warning');
             }
+        }
+        
+        function updateServiceVisibility(serviceName, isEnabled) {
+            // Скрываем/показываем блоки сервисов в зависимости от их статуса
+            const serviceBlocks = document.querySelectorAll(`[data-service="${serviceName}"]`);
+            serviceBlocks.forEach(block => {
+                block.style.display = isEnabled ? 'block' : 'none';
+            });
         }
 
         function sendMessage() {

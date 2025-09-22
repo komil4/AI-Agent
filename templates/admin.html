@@ -217,6 +217,9 @@
                             <button class="btn btn-outline-warning btn-sm" onclick="showSection('gitlab')">
                                 <i class="fas fa-code-branch"></i> GitLab
                             </button>
+                            <button class="btn btn-outline-info btn-sm" onclick="showSection('onec')">
+                                <i class="fas fa-database"></i> 1С
+                            </button>
                             <button class="btn btn-outline-secondary btn-sm" onclick="showSection('llm')">
                                 <i class="fas fa-robot"></i> LLM
                             </button>
@@ -349,6 +352,7 @@
                 'jira': 'Jira',
                 'atlassian': 'Atlassian Confluence',
                 'gitlab': 'GitLab',
+                'onec': '1С',
                 'llm': 'LLM Сервер',
                 'redis': 'Redis'
             };
@@ -379,6 +383,13 @@
                     { key: 'token', label: 'Токен', type: 'password', placeholder: 'ваш-gitlab-токен' },
                     { key: 'enabled', label: 'Включено', type: 'checkbox' }
                 ],
+                'onec': [
+                    { key: 'url', label: 'URL 1С', type: 'text', placeholder: 'http://localhost:8080' },
+                    { key: 'api_path', label: 'API Путь', type: 'text', placeholder: '/api/tasks' },
+                    { key: 'username', label: 'Пользователь', type: 'text', placeholder: 'admin' },
+                    { key: 'password', label: 'Пароль', type: 'password', placeholder: 'password' },
+                    { key: 'enabled', label: 'Включено', type: 'checkbox' }
+                ],
                 'llm': [
                     { key: 'provider', label: 'Провайдер по умолчанию', type: 'select', options: ['openai', 'anthropic', 'google', 'ollama', 'local'] }
                 ],
@@ -389,7 +400,8 @@
                 'mcp_servers': [
                     { key: 'jira', label: 'Jira MCP', type: 'section' },
                     { key: 'gitlab', label: 'GitLab MCP', type: 'section' },
-                    { key: 'confluence', label: 'Confluence MCP', type: 'section' }
+                    { key: 'confluence', label: 'Confluence MCP', type: 'section' },
+                    { key: 'onec', label: '1С MCP', type: 'section' }
                 ]
             };
             

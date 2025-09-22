@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 from mcp_servers.jira_server import JiraMCPServer
 from mcp_servers.atlassian_server import AtlassianMCPServer
 from mcp_servers.gitlab_server import GitLabMCPServer
+from mcp_servers.onec_server import OneCMCPServer
 from llm_client import LLMClient
 from models import (
     ChatMessage, ChatResponse, ErrorResponse, HealthResponse, ServiceStatus,
@@ -117,12 +118,13 @@ app.add_middleware(
 # Инициализация сервисов
 def init_services():
     """Инициализирует все сервисы"""
-    global jira_server, atlassian_server, gitlab_server, llm_client, ad_auth, session_manager, admin_auth, config_manager, code_analyzer
+    global jira_server, atlassian_server, gitlab_server, onec_server, llm_client, ad_auth, session_manager, admin_auth, config_manager, code_analyzer
     
     # MCP серверы
     jira_server = JiraMCPServer()
     atlassian_server = AtlassianMCPServer()
     gitlab_server = GitLabMCPServer()
+    onec_server = OneCMCPServer()
     
     # LLM клиент
     llm_client = LLMClient()
@@ -510,6 +512,7 @@ async def health():
     jira_status = jira_server.check_health()
     atlassian_status = atlassian_server.check_health()
     gitlab_status = gitlab_server.check_health()
+    onec_status = onec_server.check_health()
     
     # Проверяем LDAP только если он включен
     ldap_status = {"status": "disabled", "message": "LDAP отключен в конфигурации"}
@@ -527,8 +530,54 @@ async def health():
         jira=ServiceStatus(**jira_status),
         atlassian=ServiceStatus(**atlassian_status),
         gitlab=ServiceStatus(**gitlab_status),
+        onec=ServiceStatus(**onec_status),
         ldap=ServiceStatus(**ldap_status)
     )
+
+@app.get("/api/services/status")
+async def get_services_status():
+    """Получает статус сервисов с информацией о том, какие включены"""
+    # Получаем конфигурацию сервисов
+    jira_config = config_manager.get_service_config('jira')
+    atlassian_config = config_manager.get_service_config('atlassian')
+    gitlab_config = config_manager.get_service_config('gitlab')
+    onec_config = config_manager.get_service_config('onec')
+    llm_config = config_manager.get_service_config('llm')
+    
+    # Получаем статусы
+    llm_status = await llm_client.check_health()
+    jira_status = jira_server.check_health()
+    atlassian_status = atlassian_server.check_health()
+    gitlab_status = gitlab_server.check_health()
+    onec_status = onec_server.check_health()
+    
+    # Для LLM проверяем, включен ли текущий провайдер
+    current_provider = llm_config.get('provider', 'ollama')
+    provider_config = llm_config.get('providers', {}).get(current_provider, {})
+    llm_enabled = provider_config.get('enabled', False)
+    
+    return {
+        "llm": {
+            "enabled": llm_enabled,
+            "status": llm_status.get('status', 'unknown')
+        },
+        "jira": {
+            "enabled": jira_config.get('enabled', False),
+            "status": jira_status.get('status', 'unknown')
+        },
+        "atlassian": {
+            "enabled": atlassian_config.get('enabled', False),
+            "status": atlassian_status.get('status', 'unknown')
+        },
+        "gitlab": {
+            "enabled": gitlab_config.get('enabled', False),
+            "status": gitlab_status.get('status', 'unknown')
+        },
+        "onec": {
+            "enabled": onec_config.get('enabled', False),
+            "status": onec_status.get('status', 'unknown')
+        }
+    }
 
 # LLM Provider Management Endpoints
 
