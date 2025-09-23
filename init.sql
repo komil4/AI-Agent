@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS messages (
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     message_type VARCHAR(20) NOT NULL CHECK (message_type IN ('user', 'assistant', 'system')),
     content TEXT NOT NULL,
-    metadata JSONB,
+    message_metadata JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

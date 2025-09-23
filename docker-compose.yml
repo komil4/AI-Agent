@@ -7,7 +7,7 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - /opt/ollama_data:/root/.ollama
+      - /opt/ollama/data:/root/.ollama
     environment:
       - OLLAMA_HOST=0.0.0.0
     command: serve
@@ -19,7 +19,7 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - /opt/redis_data:/data
+      - /opt/redis/data:/data
     restart: unless-stopped
 
   postgres:
@@ -32,8 +32,8 @@ services:
       - POSTGRES_USER=mcp_user
       - POSTGRES_PASSWORD=mcp_password
     volumes:
-      - /opt/postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - /opt/postgres/data:/var/lib/postgresql/data
+      - /opt/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: unless-stopped
 
 volumes:

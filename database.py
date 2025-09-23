@@ -55,7 +55,7 @@ class Message(Base):
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     message_type = Column(String(20), nullable=False)  # user, assistant, system
     content = Column(Text, nullable=False)
-    metadata = Column(JSON)
+    message_metadata = Column(JSON)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Связи

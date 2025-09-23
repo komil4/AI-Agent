@@ -87,7 +87,7 @@ class ChatService:
                 user_id=user_id,
                 message_type=message_type,
                 content=content,
-                metadata=metadata or {}
+                message_metadata=metadata or {}
             )
             session.add(message)
             session.commit()
@@ -142,7 +142,7 @@ class ChatService:
                     'type': msg.message_type,
                     'content': msg.content,
                     'created_at': msg.created_at.isoformat(),
-                    'metadata': msg.metadata or {},
+                    'metadata': msg.message_metadata or {},
                     'tools': []
                 }
                 
