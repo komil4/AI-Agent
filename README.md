@@ -176,11 +176,39 @@ docker-compose up -d
 docker-compose -f docker-compose-full.yml up -d
 ```
 
+### Доступные сервисы
+
+После запуска `docker-compose up -d` будут доступны следующие сервисы:
+
+- **🌐 MCP Chat App:** http://localhost:8000
+- **🗄️ PostgreSQL:** localhost:5432
+- **📊 pgAdmin:** http://localhost:8080
+- **🤖 Ollama LLM:** http://localhost:11434
+- **⚡ Redis:** localhost:6379
+
+#### pgAdmin для управления базой данных
+
+- **URL:** http://localhost:8080
+- **Email:** admin@mcp.local
+- **Пароль:** admin123
+
+**Настройка подключения к PostgreSQL в pgAdmin:**
+- **Host:** postgres-server
+- **Port:** 5432
+- **Database:** mcp_chat
+- **Username:** mcp_user
+- **Password:** mcp_password
+
+Подробная инструкция: [docs/PGADMIN_SETUP.md](docs/PGADMIN_SETUP.md)
+
 ## 📚 Документация
 
 - [docs/README.md](docs/README.md) - Подробная документация
 - [docs/LLM_PROVIDERS.md](docs/LLM_PROVIDERS.md) - LLM провайдеры
 - [docs/MCP_SETUP.md](docs/MCP_SETUP.md) - Настройка MCP
+- [docs/DATABASE_SETUP.md](docs/DATABASE_SETUP.md) - Настройка PostgreSQL
+- [docs/PGADMIN_SETUP.md](docs/PGADMIN_SETUP.md) - Управление БД через pgAdmin
+- [docs/LDAP_USER_MANAGEMENT.md](docs/LDAP_USER_MANAGEMENT.md) - Управление пользователями LDAP
 
 ## 🔐 Безопасность
 

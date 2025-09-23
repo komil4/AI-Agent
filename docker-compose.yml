@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  llm-server:
+  llm:
     image: ollama/ollama:latest
-    container_name: llm-server
+    container_name: llm
     ports:
       - "11434:11434"
     volumes:
@@ -15,7 +15,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: redis-server
+    container_name: redis
     ports:
       - "6379:6379"
     volumes:
@@ -24,7 +24,7 @@ services:
 
   postgres:
     image: postgres:15-alpine
-    container_name: postgres-server
+    container_name: postgres
     ports:
       - "5432:5432"
     environment:
@@ -36,7 +36,22 @@ services:
       - /opt/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: unless-stopped
 
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    ports:
+      - "5433:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@admin.ru
+      - PGADMIN_DEFAULT_PASSWORD=admin123
+      - PGADMIN_CONFIG_SERVER_MODE=False
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
+    restart: unless-stopped
+    depends_on:
+      - postgres
+
 volumes:
   ollama_data:
   redis_data:
   postgres_data:
+  pgadmin_data:

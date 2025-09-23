@@ -24,6 +24,7 @@ class ChatService:
             user = session.query(User).filter(User.username == username).first()
             
             if not user:
+                # Создаем нового пользователя
                 user = User(
                     username=username,
                     display_name=user_info.get('display_name', username),
@@ -34,16 +35,41 @@ class ChatService:
                 session.add(user)
                 session.commit()
                 session.refresh(user)
-                logger.info(f"✅ Создан новый пользователь: {username}")
+                logger.info(f"✅ Создан новый пользователь: {username} (ID: {user.id})")
+                logger.info(f"   Display Name: {user.display_name}")
+                logger.info(f"   Email: {user.email}")
+                logger.info(f"   Groups: {user.groups}")
+                logger.info(f"   Is Admin: {user.is_admin}")
             else:
                 # Обновляем информацию о пользователе
+                old_display_name = user.display_name
+                old_email = user.email
+                old_groups = user.groups
+                old_is_admin = user.is_admin
+                
                 user.display_name = user_info.get('display_name', user.display_name)
                 user.email = user_info.get('email', user.email)
                 user.groups = user_info.get('groups', user.groups)
                 user.is_admin = user_info.get('is_admin', user.is_admin)
                 user.last_login = datetime.utcnow()
                 session.commit()
-                logger.info(f"✅ Обновлен пользователь: {username}")
+                
+                # Логируем изменения
+                changes = []
+                if old_display_name != user.display_name:
+                    changes.append(f"display_name: '{old_display_name}' -> '{user.display_name}'")
+                if old_email != user.email:
+                    changes.append(f"email: '{old_email}' -> '{user.email}'")
+                if old_groups != user.groups:
+                    changes.append(f"groups: {old_groups} -> {user.groups}")
+                if old_is_admin != user.is_admin:
+                    changes.append(f"is_admin: {old_is_admin} -> {user.is_admin}")
+                
+                if changes:
+                    logger.info(f"✅ Обновлен пользователь: {username} (ID: {user.id})")
+                    logger.info(f"   Изменения: {', '.join(changes)}")
+                else:
+                    logger.info(f"✅ Обновлен пользователь: {username} (ID: {user.id}) - только last_login")
             
             return user
     

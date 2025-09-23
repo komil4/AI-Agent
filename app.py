@@ -230,6 +230,11 @@ async def login(login_data: LoginRequest):
                     "is_admin": True
                 }
                 
+                # Создаем или обновляем пользователя admin в базе данных
+                logger.info(f"🔍 Создаем/обновляем пользователя admin в БД: {user_info['username']}")
+                db_user = chat_service.get_or_create_user(user_info['username'], user_info)
+                logger.info(f"✅ Пользователь admin создан/обновлен в БД: {db_user.id}")
+                
                 # Создаем JWT токен
                 access_token = ad_auth.create_access_token(user_info)
                 
@@ -268,6 +273,11 @@ async def login(login_data: LoginRequest):
                 success=False,
                 message="Неверные учетные данные или пользователь не найден в Active Directory"
             )
+        
+        # Создаем или обновляем пользователя в базе данных при первом входе
+        logger.info(f"🔍 Создаем/обновляем пользователя LDAP в БД: {user_info['username']}")
+        db_user = chat_service.get_or_create_user(user_info['username'], user_info)
+        logger.info(f"✅ Пользователь LDAP создан/обновлен в БД: {db_user.id}")
         
         # Создаем JWT токен
         access_token = ad_auth.create_access_token(user_info)
@@ -514,8 +524,12 @@ async def analyze_code(analysis_request: CodeAnalysisRequest, request: Request):
 async def chat(chat_message: ChatMessage, request: Request):
     """Обработка сообщений чат-бота (только для аутентифицированных пользователей)"""
     try:
+        logger.info("🔍 Начинаем обработку сообщения чата")
+        
         # Используем универсальную функцию для получения пользователя
         user = await get_user_from_session(request)
+        logger.info(f"✅ Получен пользователь: {user.get('username')}")
+        
         user_message = chat_message.message.strip()
         
         if not user_message:
@@ -523,13 +537,18 @@ async def chat(chat_message: ChatMessage, request: Request):
         
         # Получаем или создаем пользователя в базе данных
         db_user = chat_service.get_or_create_user(user.get('username'), user)
+        logger.info(f"✅ Получен/создан пользователь БД: {db_user.id}")
         
         # Получаем или создаем активную сессию
         active_session = chat_service.get_active_session(db_user.id)
         if not active_session:
             active_session = chat_service.create_chat_session(db_user.id)
+            logger.info(f"✅ Создана новая сессия: {active_session.id}")
+        else:
+            logger.info(f"✅ Используется существующая сессия: {active_session.id}")
         
         # Сохраняем сообщение пользователя
+        logger.info("💾 Сохраняем сообщение пользователя...")
         user_message_obj = chat_service.add_message(
             active_session.id, 
             db_user.id, 
@@ -537,6 +556,7 @@ async def chat(chat_message: ChatMessage, request: Request):
             user_message,
             {'ip': request.client.host if request.client else None}
         )
+        logger.info(f"✅ Сообщение пользователя сохранено: {user_message_obj.id}")
         
         # Добавляем информацию о пользователе в контекст
         user_context = {
@@ -550,9 +570,12 @@ async def chat(chat_message: ChatMessage, request: Request):
         }
         
         # Определяем команду и вызываем соответствующий MCP сервер
+        logger.info("🤖 Обрабатываем команду...")
         response = await process_command(user_message, user_context)
+        logger.info(f"✅ Получен ответ: {response[:100]}...")
         
         # Сохраняем ответ ассистента
+        logger.info("💾 Сохраняем ответ ассистента...")
         assistant_message_obj = chat_service.add_message(
             active_session.id, 
             db_user.id, 
@@ -560,6 +583,7 @@ async def chat(chat_message: ChatMessage, request: Request):
             response,
             {'session_id': active_session.id}
         )
+        logger.info(f"✅ Ответ ассистента сохранен: {assistant_message_obj.id}")
         
         return ChatResponse(
             response=response,
@@ -569,6 +593,9 @@ async def chat(chat_message: ChatMessage, request: Request):
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"❌ Ошибка в chat endpoint: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500, 
             detail=f"Ошибка обработки сообщения: {str(e)}"
