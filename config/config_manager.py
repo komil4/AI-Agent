@@ -11,6 +11,14 @@ class ConfigManager:
     def __init__(self):
         self.config_file = "app_config.json"
         self.default_config = {
+            "database": {
+                "host": "localhost",
+                "port": 5432,
+                "database": "mcp_chat",
+                "username": "mcp_user",
+                "password": "mcp_password",
+                "enabled": True
+            },
             "active_directory": {
                 "server": "",
                 "domain": "",
@@ -41,6 +49,10 @@ class ConfigManager:
                 "api_path": "/api/tasks",
                 "username": "",
                 "password": "",
+                "enabled": False
+            },
+            "file": {
+                "base_path": "/tmp",
                 "enabled": False
             },
             "llm": {
@@ -489,3 +501,8 @@ class ConfigManager:
             
         except Exception as e:
             logger.error(f"Ошибка перезагрузки сервисов: {e}")
+    
+    def get_database_url(self) -> str:
+        """Возвращает URL для подключения к базе данных"""
+        db_config = self.get_service_config('database')
+        return f"postgresql://{db_config['username']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['database']}"

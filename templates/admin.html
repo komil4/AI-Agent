@@ -205,6 +205,9 @@
                         </div>
                         <hr>
                         <div class="d-grid gap-2">
+                            <button class="btn btn-outline-success btn-sm" onclick="showSection('database')">
+                                <i class="fas fa-database"></i> База данных
+                            </button>
                             <button class="btn btn-outline-primary btn-sm" onclick="showSection('active_directory')">
                                 <i class="fas fa-users"></i> Active Directory
                             </button>
@@ -219,6 +222,9 @@
                             </button>
                             <button class="btn btn-outline-info btn-sm" onclick="showSection('onec')">
                                 <i class="fas fa-database"></i> 1С
+                            </button>
+                            <button class="btn btn-outline-success btn-sm" onclick="showSection('file')">
+                                <i class="fas fa-folder"></i> Файлы
                             </button>
                             <button class="btn btn-outline-secondary btn-sm" onclick="showSection('llm')">
                                 <i class="fas fa-robot"></i> LLM
@@ -348,16 +354,26 @@
         // Get configuration form
         function getConfigForm(section, config) {
             const sectionNames = {
+                'database': 'База данных',
                 'active_directory': 'Active Directory',
                 'jira': 'Jira',
                 'atlassian': 'Atlassian Confluence',
                 'gitlab': 'GitLab',
                 'onec': '1С',
+                'file': 'Файловая система',
                 'llm': 'LLM Сервер',
                 'redis': 'Redis'
             };
             
             const sectionConfigs = {
+                'database': [
+                    { key: 'host', label: 'Хост', type: 'text', placeholder: 'localhost' },
+                    { key: 'port', label: 'Порт', type: 'number', placeholder: '5432' },
+                    { key: 'database', label: 'База данных', type: 'text', placeholder: 'mcp_chat' },
+                    { key: 'username', label: 'Пользователь', type: 'text', placeholder: 'mcp_user' },
+                    { key: 'password', label: 'Пароль', type: 'password', placeholder: 'mcp_password' },
+                    { key: 'enabled', label: 'Включена', type: 'checkbox' }
+                ],
                 'active_directory': [
                     { key: 'server', label: 'AD Сервер', type: 'text', placeholder: 'ldap://domain.local:389' },
                     { key: 'domain', label: 'Домен', type: 'text', placeholder: 'domain.local' },
@@ -390,6 +406,10 @@
                     { key: 'password', label: 'Пароль', type: 'password', placeholder: 'password' },
                     { key: 'enabled', label: 'Включено', type: 'checkbox' }
                 ],
+                'file': [
+                    { key: 'base_path', label: 'Базовая директория', type: 'text', placeholder: '/tmp' },
+                    { key: 'enabled', label: 'Включено', type: 'checkbox' }
+                ],
                 'llm': [
                     { key: 'provider', label: 'Провайдер по умолчанию', type: 'select', options: ['openai', 'anthropic', 'google', 'ollama', 'local'] }
                 ],
@@ -401,7 +421,8 @@
                     { key: 'jira', label: 'Jira MCP', type: 'section' },
                     { key: 'gitlab', label: 'GitLab MCP', type: 'section' },
                     { key: 'confluence', label: 'Confluence MCP', type: 'section' },
-                    { key: 'onec', label: '1С MCP', type: 'section' }
+                    { key: 'onec', label: '1С MCP', type: 'section' },
+                    { key: 'file', label: 'Файловая система MCP', type: 'section' }
                 ]
             };
             

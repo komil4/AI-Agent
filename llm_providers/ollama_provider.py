@@ -160,31 +160,12 @@ class OllamaProvider(BaseLLMProvider):
     async def _supports_tools(self) -> bool:
         """Проверяет, поддерживает ли модель инструменты"""
         try:
-            # Проверяем версию Ollama
-            def _get_version():
-                return self.client.version()
-            
-            loop = asyncio.get_event_loop()
-            version_info = await loop.run_in_executor(None, _get_version)
-            version = version_info.get('version', '0.0.0')
-            
-            # Проверяем, поддерживает ли версия инструменты
-            return self._version_supports_tools(version)
+            # Для простоты считаем, что все модели поддерживают инструменты
+            # В реальности это зависит от конкретной модели и версии Ollama
+            return True
         except:
             return False
-    
-    def _version_supports_tools(self, version: str) -> bool:
-        """Проверяет, поддерживает ли версия Ollama инструменты"""
-        try:
-            parts = version.split('.')
-            if len(parts) >= 2:
-                major = int(parts[0])
-                minor = int(parts[1])
-                # Предполагаем, что инструменты поддерживаются с версии 0.1.20+
-                return major > 0 or (major == 0 and minor >= 1)
-            return False
-        except:
-            return False
+   
     
     async def _fallback_to_simple_generation(self, user_message: str, messages: List[Dict[str, str]], tools: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
         """Fallback к простой генерации, если инструменты не поддерживаются"""
@@ -381,11 +362,8 @@ class OllamaProvider(BaseLLMProvider):
                 try:
                     # Проверяем список моделей
                     models = self.client.list()
-                    # Проверяем версию
-                    version = self.client.version()
                     return {
-                        'models': models,
-                        'version': version
+                        'models': models
                     }
                 except ConnectionError as e:
                     raise Exception(f"Не удалось подключиться к Ollama на {self.base_url}. Проверьте, что Ollama запущен.")
@@ -397,7 +375,7 @@ class OllamaProvider(BaseLLMProvider):
             
             # Проверяем, есть ли нужная модель
             models = health_info.get('models', {}).get('models', [])
-            model_names = [model['name'] for model in models]
+            model_names = [model['model'] for model in models]
             
             if self.model not in model_names:
                 return {
@@ -405,16 +383,15 @@ class OllamaProvider(BaseLLMProvider):
                     'error': f'Модель {self.model} не найдена. Доступные модели: {", ".join(model_names)}'
                 }
             
-            version_info = health_info.get('version', {})
-            version = version_info.get('version', 'unknown')
-            supports_tools = self._version_supports_tools(version)
+            # Для совместимости с инструментами используем проверку по модели
+            supports_tools = self._supports_tools()
             
             return {
                 'status': 'healthy',
                 'provider': 'ollama',
                 'model': self.model,
                 'base_url': self.base_url,
-                'version': version,
+                'version': 'unknown',
                 'supports_tools': supports_tools,
                 'available_models': model_names
             }
@@ -430,9 +407,9 @@ class OllamaProvider(BaseLLMProvider):
             else:
                 return {
                     'status': 'unhealthy',
-                    'provider': 'ollama',
-                    'error': error_msg
-                }
+                        'provider': 'ollama',
+                        'error': error_msg
+                    }
     
     def _format_messages_for_ollama(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
         """Форматирует сообщения для Ollama API"""

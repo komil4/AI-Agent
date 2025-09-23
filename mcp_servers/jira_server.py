@@ -4,9 +4,78 @@ from jira import JIRA
 from typing import Dict, Any, List
 from analyzers.code_analyzer import CodeAnalyzer
 from config.config_manager import ConfigManager
+from . import BaseMCPServer
 
-class JiraMCPServer:
+class JiraMCPServer(BaseMCPServer):
+    """MCP сервер для работы с Jira - управление задачами, проектами и отслеживанием проблем"""
+    
     def __init__(self):
+        super().__init__()
+        self.description = "Jira - управление задачами, проектами и отслеживанием проблем"
+        self.tools = [
+            {
+                "name": "create_issue",
+                "description": "Создает новую задачу в Jira",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "summary": {"type": "string", "description": "Краткое описание задачи"},
+                        "description": {"type": "string", "description": "Подробное описание задачи"},
+                        "project_key": {"type": "string", "description": "Ключ проекта (например, TEST)"},
+                        "issue_type": {"type": "string", "description": "Тип задачи (Task, Bug, Story)"}
+                    },
+                    "required": ["summary", "project_key"]
+                }
+            },
+            {
+                "name": "search_issues",
+                "description": "Ищет задачи в Jira по JQL запросу",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "jql": {"type": "string", "description": "JQL запрос для поиска"},
+                        "max_results": {"type": "integer", "description": "Максимальное количество результатов"}
+                    },
+                    "required": ["jql"]
+                }
+            },
+            {
+                "name": "list_issues",
+                "description": "Получает список задач проекта",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "project_key": {"type": "string", "description": "Ключ проекта"},
+                        "status": {"type": "string", "description": "Статус задач"},
+                        "assignee": {"type": "string", "description": "Исполнитель задач"}
+                    }
+                }
+            },
+            {
+                "name": "update_issue_status",
+                "description": "Обновляет статус задачи",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "issue_key": {"type": "string", "description": "Ключ задачи"},
+                        "status": {"type": "string", "description": "Новый статус"}
+                    },
+                    "required": ["issue_key", "status"]
+                }
+            },
+            {
+                "name": "get_issue_details",
+                "description": "Получает детальную информацию о задаче",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "issue_key": {"type": "string", "description": "Ключ задачи"}
+                    },
+                    "required": ["issue_key"]
+                }
+            }
+        ]
+        
         self.config_manager = ConfigManager()
         self.jira_url = None
         self.username = None

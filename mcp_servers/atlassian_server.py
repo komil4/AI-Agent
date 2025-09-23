@@ -3,9 +3,78 @@ import requests
 from atlassian import Confluence
 from typing import Dict, Any, List
 from config.config_manager import ConfigManager
+from . import BaseMCPServer
 
-class AtlassianMCPServer:
+class AtlassianMCPServer(BaseMCPServer):
+    """MCP сервер для работы с Atlassian Confluence - создание и управление документацией, страницами и знаниями"""
+    
     def __init__(self):
+        super().__init__()
+        self.description = "Atlassian Confluence - создание и управление документацией, страницами и знаниями"
+        self.tools = [
+            {
+                "name": "search_pages",
+                "description": "Ищет страницы в Confluence",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Поисковый запрос"},
+                        "space_key": {"type": "string", "description": "Ключ пространства"},
+                        "limit": {"type": "integer", "description": "Максимальное количество результатов"}
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
+                "name": "create_page",
+                "description": "Создает новую страницу в Confluence",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Заголовок страницы"},
+                        "content": {"type": "string", "description": "Содержимое страницы"},
+                        "space_key": {"type": "string", "description": "Ключ пространства"},
+                        "parent_page_id": {"type": "string", "description": "ID родительской страницы"}
+                    },
+                    "required": ["title", "content", "space_key"]
+                }
+            },
+            {
+                "name": "list_pages",
+                "description": "Получает список страниц пространства",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "space_key": {"type": "string", "description": "Ключ пространства"},
+                        "limit": {"type": "integer", "description": "Максимальное количество результатов"}
+                    }
+                }
+            },
+            {
+                "name": "get_page_content",
+                "description": "Получает содержимое страницы",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "page_id": {"type": "string", "description": "ID страницы"}
+                    },
+                    "required": ["page_id"]
+                }
+            },
+            {
+                "name": "update_page",
+                "description": "Обновляет содержимое страницы",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "page_id": {"type": "string", "description": "ID страницы"},
+                        "title": {"type": "string", "description": "Новый заголовок"},
+                        "content": {"type": "string", "description": "Новое содержимое"}
+                    },
+                    "required": ["page_id", "content"]
+                }
+            }
+        ]
         self.config_manager = ConfigManager()
         self.confluence_url = None
         self.username = None

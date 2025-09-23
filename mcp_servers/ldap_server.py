@@ -1,9 +1,74 @@
 import ldap3
 from typing import Dict, Any, List
 from config.config_manager import ConfigManager
+from . import BaseMCPServer
 
-class LDAPMCPServer:
+class LDAPMCPServer(BaseMCPServer):
+    """MCP сервер для работы с LDAP/Active Directory - поиск пользователей, групп и управление корпоративными данными"""
+    
     def __init__(self):
+        super().__init__()
+        self.description = "LDAP/Active Directory - поиск пользователей, групп и управление корпоративными данными"
+        self.tools = [
+            {
+                "name": "search_users",
+                "description": "Ищет пользователей в LDAP/AD",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Поисковый запрос"},
+                        "attributes": {"type": "array", "description": "Список атрибутов для возврата"}
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
+                "name": "list_users",
+                "description": "Получает список пользователей",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "description": "Максимальное количество результатов"},
+                        "attributes": {"type": "array", "description": "Список атрибутов для возврата"}
+                    }
+                }
+            },
+            {
+                "name": "get_user_details",
+                "description": "Получает детальную информацию о пользователе",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "username": {"type": "string", "description": "Имя пользователя"},
+                        "attributes": {"type": "array", "description": "Список атрибутов для возврата"}
+                    },
+                    "required": ["username"]
+                }
+            },
+            {
+                "name": "search_groups",
+                "description": "Ищет группы в LDAP/AD",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Поисковый запрос"},
+                        "attributes": {"type": "array", "description": "Список атрибутов для возврата"}
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
+                "name": "list_groups",
+                "description": "Получает список групп",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "description": "Максимальное количество результатов"},
+                        "attributes": {"type": "array", "description": "Список атрибутов для возврата"}
+                    }
+                }
+            }
+        ]
         self.config_manager = ConfigManager()
         self.ldap_url = None
         self.ldap_user = None

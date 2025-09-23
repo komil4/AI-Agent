@@ -179,9 +179,13 @@ class LLMClient:
         """Форматирует сообщения для LLM"""
         messages = []
         
+        # Получаем информацию о включенных сервисах
+        enabled_services = self._get_enabled_services_info()
+        
         # Системное сообщение
-        system_prompt = """
-Ты - полезный AI ассистент, который работает с MCP серверами. У тебя есть доступ к различным инструментам для работы с Jira, GitLab, Confluence и LDAP.
+        system_prompt = f"""
+Ты - полезный AI ассистент, который работает с MCP серверами.
+{enabled_services}
 
 ВАЖНО: ВСЕГДА отвечай ТОЛЬКО на русском языке. Никогда не используй английский язык в ответах.
 
@@ -207,10 +211,13 @@ class LLMClient:
         """Форматирует сообщения с инструментами для LLM"""
         messages = []
         
+        # Получаем информацию о включенных сервисах
+        enabled_services = self._get_enabled_services_info()
+        
         # Системное сообщение с описанием инструментов
-        system_prompt = """
+        system_prompt = f"""
 Ты - полезный AI ассистент, который работает с MCP серверами.
-У тебя есть доступ к различным инструментам для работы с Jira, GitLab, Confluence и LDAP.
+{enabled_services}
 
 Доступные инструменты будут предоставлены в контексте.
 Используй их для выполнения запросов пользователя.
@@ -231,6 +238,29 @@ class LLMClient:
         #messages.append({"role": "user", "content": message})
         
         return messages
+    
+    def _get_enabled_services_info(self) -> str:
+        """Получает информацию о включенных сервисах для промпта"""
+        from mcp_client import mcp_client
+        
+        enabled_services = []
+        
+        # Получаем встроенные серверы
+        builtin_servers = mcp_client._get_builtin_servers()
+        
+        # Проверяем каждый сервер
+        for server_name, server in builtin_servers.items():
+            try:
+                if server.is_enabled():
+                    description = server.get_description()
+                    enabled_services.append(f"• {description}")
+            except Exception as e:
+                logger.warning(f"Не удалось получить описание сервера {server_name}: {e}")
+        
+        if enabled_services:
+            return f"У тебя есть доступ к следующим сервисам:\n" + "\n".join(enabled_services)
+        else:
+            return "У тебя нет доступа к внешним сервисам. Ты можешь отвечать на общие вопросы."
     
     def _format_context_for_prompt(self, context: Dict[str, Any]) -> str:
         """Форматирует контекст чата для промпта"""

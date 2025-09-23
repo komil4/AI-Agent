@@ -4,13 +4,42 @@ import requests
 from requests.auth import HTTPBasicAuth
 from typing import Dict, Any, List
 from config.config_manager import ConfigManager
+from . import BaseMCPServer
 
 # Временная заглушка для IntentType
 class IntentType:
     pass
 
-class OneCMCPServer:
+class OneCMCPServer(BaseMCPServer):
+    """MCP сервер для работы с 1С - получение информации о задачах пользователей и деталях задач через HTTP API"""
+    
     def __init__(self):
+        super().__init__()
+        self.description = "1С - получение информации о задачах пользователей и деталях задач через HTTP API"
+        self.tools = [
+            {
+                "name": "get_user_tasks",
+                "description": "Получает список задач пользователя в 1С",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user": {"type": "string", "description": "Имя пользователя для получения задач"}
+                    },
+                    "required": ["user"]
+                }
+            },
+            {
+                "name": "get_task_info",
+                "description": "Получает детальную информацию по задаче в 1С",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "task_id": {"type": "string", "description": "Идентификатор задачи"}
+                    },
+                    "required": ["task_id"]
+                }
+            }
+        ]
         self.config_manager = ConfigManager()
         self.url = None
         self.api_path = None

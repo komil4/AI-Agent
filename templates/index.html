@@ -282,6 +282,10 @@
                         <span class="status-indicator" id="onec-status"></span>
                         <small>1С MCP</small>
                     </div>
+                    <div class="mb-2" data-service="file">
+                        <span class="status-indicator" id="file-status"></span>
+                        <small>Файлы MCP</small>
+                    </div>
                 </div>
                 
                 <hr>
@@ -306,6 +310,9 @@
                     </button>
                     <button class="btn btn-outline-info btn-sm" onclick="sendQuickCommand('покажи задачи пользователя admin')" data-service="onec">
                         <i class="fas fa-tasks"></i> Задачи 1С
+                    </button>
+                    <button class="btn btn-outline-success btn-sm" onclick="sendQuickCommand('покажи файлы в директории /tmp')" data-service="file">
+                        <i class="fas fa-folder"></i> Файлы
                     </button>
                     <button class="btn btn-outline-secondary btn-sm" onclick="sendQuickCommand('помощь')">
                         <i class="fas fa-question-circle"></i> Помощь
@@ -395,6 +402,21 @@
                         </div>
                     </div>
                     
+                    <div class="prompt-category mb-3" data-service="file">
+                        <small class="text-muted fw-bold">📁 Файлы</small>
+                        <div class="d-flex flex-wrap gap-1 mt-1">
+                            <span class="badge bg-light text-dark prompt-badge" onclick="sendQuickCommand('покажи файлы в директории /tmp')">
+                                список файлов
+                            </span>
+                            <span class="badge bg-light text-dark prompt-badge" onclick="sendQuickCommand('прочитай файл /tmp/test.txt')">
+                                прочитать файл
+                            </span>
+                            <span class="badge bg-light text-dark prompt-badge" onclick="sendQuickCommand('создай файл /tmp/example.txt с содержимым Hello World')">
+                                создать файл
+                            </span>
+                        </div>
+                    </div>
+                    
                     <div class="prompt-category mb-3">
                         <small class="text-muted fw-bold">🤖 Общие</small>
                         <div class="d-flex flex-wrap gap-1 mt-1">
@@ -423,7 +445,7 @@
                 <div class="chat-container" id="chat-container">
                     <div class="message bot-message">
                         <strong><i class="fas fa-robot"></i> AI Ассистент:</strong><br>
-                        👋 Привет! Я ваш AI ассистент с поддержкой MCP серверов для Jira, Confluence, GitLab и 1С. 
+                        👋 Привет! Я ваш AI ассистент с поддержкой MCP серверов для Jira, Confluence, GitLab, 1С и файловой системы. 
                         Напишите что хотите сделать, или используйте быстрые команды слева.
                     </div>
                     
@@ -546,6 +568,8 @@
                 element.classList.add('status-connected');
             } else if (status === 'error' || status === 'unhealthy') {
                 element.classList.add('status-error');
+            } else if (status === 'disabled') {
+                element.classList.add('status-warning');
             } else {
                 element.classList.add('status-warning');
             }

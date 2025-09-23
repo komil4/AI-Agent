@@ -22,6 +22,21 @@ services:
       - /opt/redis_data:/data
     restart: unless-stopped
 
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres-server
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=mcp_chat
+      - POSTGRES_USER=mcp_user
+      - POSTGRES_PASSWORD=mcp_password
+    volumes:
+      - /opt/postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
 volumes:
   ollama_data:
   redis_data:
+  postgres_data:

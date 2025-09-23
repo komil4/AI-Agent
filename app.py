@@ -21,6 +21,8 @@ from mcp_servers.atlassian_server import AtlassianMCPServer
 from mcp_servers.gitlab_server import GitLabMCPServer
 from mcp_servers.onec_server import OneCMCPServer
 from llm_client import LLMClient
+from database import init_database
+from chat_service import chat_service
 from models import (
     ChatMessage, ChatResponse, ErrorResponse, HealthResponse, ServiceStatus,
     LoginRequest, LoginResponse, UserInfo, LogoutResponse,
@@ -147,10 +149,16 @@ app.add_middleware(AuthMiddleware, session_manager=session_manager)
 async def startup_event():
     """Инициализация MCP клиента при запуске приложения"""
     try:
+        # Инициализируем базу данных
+        database_url = config_manager.get_database_url()
+        init_database(database_url)
+        logger.info("✅ База данных инициализирована")
+        
+        # Инициализируем MCP клиент
         await mcp_client.initialize_servers()
         logger.info("✅ Упрощенный MCP клиент инициализирован")
     except Exception as e:
-        logger.error(f"❌ Ошибка инициализации MCP клиента: {e}")
+        logger.error(f"❌ Ошибка инициализации: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -207,8 +215,51 @@ async def login_page():
 
 @app.post("/api/auth/login")
 async def login(login_data: LoginRequest):
-    """Аутентификация пользователя через Active Directory"""
+    """Аутентификация пользователя через Active Directory или admin"""
     try:
+        # Сначала проверяем, не admin ли это
+        if login_data.username.lower() == "admin":
+            # Проверяем пароль admin
+            if admin_auth.authenticate_admin(login_data.username, login_data.password):
+                # Создаем пользователя admin
+                user_info = {
+                    "username": "admin",
+                    "display_name": "Administrator",
+                    "email": "admin@localhost",
+                    "groups": ["admin"],
+                    "is_admin": True
+                }
+                
+                # Создаем JWT токен
+                access_token = ad_auth.create_access_token(user_info)
+                
+                # Создаем сессию
+                session_id = session_manager.create_session(user_info, access_token)
+                
+                # Создаем ответ с cookie
+                response = LoginResponse(
+                    success=True,
+                    message="Успешная аутентификация admin",
+                    user_info=user_info
+                )
+                
+                # Устанавливаем cookie с session_id
+                from fastapi.responses import JSONResponse
+                json_response = JSONResponse(
+                    content=response.dict(),
+                    status_code=200
+                )
+                json_response.set_cookie(
+                    key="session_id",
+                    value=session_id,
+                    httponly=True,
+                    secure=False,  # Установите True для HTTPS
+                    samesite="lax",
+                    max_age=24*60*60  # 24 часа
+                )
+                
+                return json_response
+        
         # Аутентификация через AD
         user_info = ad_auth.authenticate_user(login_data.username, login_data.password)
         
@@ -470,6 +521,23 @@ async def chat(chat_message: ChatMessage, request: Request):
         if not user_message:
             raise HTTPException(status_code=400, detail="Сообщение не может быть пустым")
         
+        # Получаем или создаем пользователя в базе данных
+        db_user = chat_service.get_or_create_user(user.get('username'), user)
+        
+        # Получаем или создаем активную сессию
+        active_session = chat_service.get_active_session(db_user.id)
+        if not active_session:
+            active_session = chat_service.create_chat_session(db_user.id)
+        
+        # Сохраняем сообщение пользователя
+        user_message_obj = chat_service.add_message(
+            active_session.id, 
+            db_user.id, 
+            'user', 
+            user_message,
+            {'ip': request.client.host if request.client else None}
+        )
+        
         # Добавляем информацию о пользователе в контекст
         user_context = {
             'user': {
@@ -477,11 +545,21 @@ async def chat(chat_message: ChatMessage, request: Request):
                 'display_name': user.get('display_name'),
                 'email': user.get('email'),
                 'groups': user.get('groups', [])
-            }
+            },
+            'session_id': active_session.id
         }
         
         # Определяем команду и вызываем соответствующий MCP сервер
         response = await process_command(user_message, user_context)
+        
+        # Сохраняем ответ ассистента
+        assistant_message_obj = chat_service.add_message(
+            active_session.id, 
+            db_user.id, 
+            'assistant', 
+            response,
+            {'session_id': active_session.id}
+        )
         
         return ChatResponse(
             response=response,
@@ -859,6 +937,79 @@ async def api_docs():
 @app.get("/favicon.ico")
 async def favicon():
     return FileResponse("static/favicon.ico")
+
+# API для работы с историей чата
+@app.get("/api/chat/sessions")
+async def get_chat_sessions(request: Request):
+    """Получает список сессий чата пользователя"""
+    try:
+        user = await get_user_from_session(request)
+        db_user = chat_service.get_or_create_user(user.get('username'), user)
+        sessions = chat_service.get_user_sessions(db_user.id)
+        
+        return {
+            "sessions": [
+                {
+                    "id": session.id,
+                    "name": session.session_name,
+                    "created_at": session.created_at.isoformat(),
+                    "updated_at": session.updated_at.isoformat(),
+                    "is_active": session.is_active
+                }
+                for session in sessions
+            ]
+        }
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения сессий: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка получения сессий: {str(e)}")
+
+@app.get("/api/chat/sessions/{session_id}/history")
+async def get_session_history(session_id: int, request: Request):
+    """Получает историю конкретной сессии"""
+    try:
+        user = await get_user_from_session(request)
+        db_user = chat_service.get_or_create_user(user.get('username'), user)
+        
+        # Проверяем, что сессия принадлежит пользователю
+        session = chat_service.get_user_sessions(db_user.id)
+        if not any(s.id == session_id for s in session):
+            raise HTTPException(status_code=403, detail="Доступ к сессии запрещен")
+        
+        history = chat_service.get_session_history(session_id)
+        return {"history": history}
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения истории: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка получения истории: {str(e)}")
+
+@app.post("/api/chat/sessions/{session_id}/close")
+async def close_session(session_id: int, request: Request):
+    """Закрывает сессию чата"""
+    try:
+        user = await get_user_from_session(request)
+        db_user = chat_service.get_or_create_user(user.get('username'), user)
+        
+        # Проверяем, что сессия принадлежит пользователю
+        session = chat_service.get_user_sessions(db_user.id)
+        if not any(s.id == session_id for s in session):
+            raise HTTPException(status_code=403, detail="Доступ к сессии запрещен")
+        
+        chat_service.close_session(session_id)
+        return {"message": "Сессия закрыта"}
+    except Exception as e:
+        logger.error(f"❌ Ошибка закрытия сессии: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка закрытия сессии: {str(e)}")
+
+@app.get("/api/chat/stats")
+async def get_user_stats(request: Request):
+    """Получает статистику пользователя"""
+    try:
+        user = await get_user_from_session(request)
+        db_user = chat_service.get_or_create_user(user.get('username'), user)
+        stats = chat_service.get_user_stats(db_user.id)
+        return stats
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения статистики: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка получения статистики: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

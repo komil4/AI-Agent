@@ -4,10 +4,8 @@
 Каждый MCP сервер имеет фиксированный набор инструментов, которые отправляются в LLM сразу
 """
 
-import asyncio
-import json
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from config.config_manager import ConfigManager
 
 # Условный импорт MCP библиотеки
@@ -47,7 +45,8 @@ class MCPClient:
             
         try:
             # Для 1С используем встроенный сервер
-            onec_server = self.builtin_servers.get('onec')
+            builtin_servers = self._get_builtin_servers()
+            onec_server = builtin_servers.get('onec')
             if onec_server:
                 self.sessions['onec'] = onec_server
                 # Используем предопределенные инструменты
@@ -61,136 +60,61 @@ class MCPClient:
     
     def _define_tools(self):
         """Определяет предопределенные инструменты для каждого сервера"""
-        self.server_tools = {
-            'jira': [
-                {
-                    "name": "create_issue",
-                    "description": "Создает новую задачу в Jira",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "summary": {"type": "string", "description": "Краткое описание задачи"},
-                            "description": {"type": "string", "description": "Подробное описание задачи"},
-                            "project_key": {"type": "string", "description": "Ключ проекта (например, TEST)"},
-                            "issue_type": {"type": "string", "description": "Тип задачи (Task, Bug, Story)"}
-                        },
-                        "required": ["summary", "project_key"]
-                    }
-                },
-                {
-                    "name": "search_issues",
-                    "description": "Ищет задачи в Jira по JQL запросу",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "jql": {"type": "string", "description": "JQL запрос для поиска"},
-                            "max_results": {"type": "integer", "description": "Максимальное количество результатов"}
-                        },
-                        "required": ["jql"]
-                    }
-                }
-            ],
-            'gitlab': [
-                {
-                    "name": "list_projects",
-                    "description": "Получает список проектов GitLab",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "search": {"type": "string", "description": "Поисковый запрос"},
-                            "per_page": {"type": "integer", "description": "Количество результатов на странице"}
-                        }
-                    }
-                },
-                {
-                    "name": "get_project_commits",
-                    "description": "Получает коммиты проекта",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "project_name": {"type": "string", "description": "Название проекта"},
-                            "per_page": {"type": "integer", "description": "Количество коммитов"},
-                            "author_email": {"type": "string", "description": "Email автора для фильтрации"}
-                        },
-                        "required": ["project_name"]
-                    }
-                }
-            ],
-            'onec': [
-                {
-                    "name": "get_user_tasks",
-                    "description": "Получает список задач пользователя в 1С",
-                    "parameters": {
-                        "user": {"type": "string", "description": "Имя пользователя для получения задач"}
-                    }
-                },
-                {
-                    "name": "get_task_info",
-                    "description": "Получает детальную информацию по задаче в 1С",
-                    "parameters": {
-                        "task_id": {"type": "string", "description": "Идентификатор задачи"}
-                    }
-                }
-            ],
-            'confluence': [
-                {
-                    "name": "search_pages",
-                    "description": "Ищет страницы в Confluence",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {"type": "string", "description": "Поисковый запрос"},
-                            "space_key": {"type": "string", "description": "Ключ пространства"},
-                            "limit": {"type": "integer", "description": "Максимальное количество результатов"}
-                        },
-                        "required": ["query"]
-                    }
-                },
-                {
-                    "name": "create_page",
-                    "description": "Создает новую страницу в Confluence",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "title": {"type": "string", "description": "Заголовок страницы"},
-                            "content": {"type": "string", "description": "Содержимое страницы"},
-                            "space_key": {"type": "string", "description": "Ключ пространства"},
-                            "parent_page_id": {"type": "string", "description": "ID родительской страницы"}
-                        },
-                        "required": ["title", "content", "space_key"]
-                    }
-                }
-            ]
-        }
+        # Получаем информацию о включенных сервисах
+        enabled_services = self._get_enabled_services()
+        
+        # Определяем инструменты только для включенных сервисов
+        all_tools = {}
+        
+        # Получаем встроенные серверы
+        builtin_servers = self._get_builtin_servers()
+        
+        # Добавляем инструменты только для включенных сервисов
+        for server_name, server in builtin_servers.items():
+            if server_name in enabled_services:
+                try:
+                    tools = server.get_tools()
+                    if tools:
+                        all_tools[server_name] = tools
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось получить инструменты от {server_name}: {e}")
+        
+        self.server_tools = all_tools
     
     def _get_builtin_servers(self) -> Dict[str, Any]:
         """Получает экземпляры встроенных MCP серверов"""
-        try:
-            from mcp_servers.jira_server import JiraMCPServer
-            from mcp_servers.gitlab_server import GitLabMCPServer
-            from mcp_servers.atlassian_server import AtlassianMCPServer
-            from mcp_servers.onec_server import OneCMCPServer
-            
-            servers = {
-                'jira': JiraMCPServer(),
-                'gitlab': GitLabMCPServer(),
-                'confluence': AtlassianMCPServer(),
-                'onec': OneCMCPServer()
-            }
-            
-            # Проверяем, включен ли LDAP в конфигурации
-            ad_config = self.config_manager.get_service_config('active_directory')
-            if ad_config.get('enabled', False):
-                from mcp_servers.ldap_server import LDAPMCPServer
-                servers['ldap'] = LDAPMCPServer()
-                logger.info("✅ LDAP сервер включен в конфигурации")
-            else:
-                logger.info("ℹ️ LDAP сервер отключен в конфигурации")
-            
-            return servers
-        except Exception as e:
-            logger.error(f"❌ Ошибка создания встроенных серверов: {e}")
-            return {}
+        servers = {}
+        
+        # Список доступных серверов
+        server_modules = {
+            'jira': 'mcp_servers.jira_server',
+            'gitlab': 'mcp_servers.gitlab_server',
+            'atlassian': 'mcp_servers.atlassian_server',
+            'ldap': 'mcp_servers.ldap_server',
+            'onec': 'mcp_servers.onec_server',
+            'file': 'mcp_servers.file_server'
+        }
+        
+        for server_name, module_name in server_modules.items():
+            try:
+                # Динамически импортируем модуль
+                module = __import__(module_name, fromlist=[f'{server_name.title()}MCPServer'])
+                server_class = getattr(module, f'{server_name.title()}MCPServer')
+                
+                # Создаем экземпляр сервера
+                server_instance = server_class()
+                
+                # Проверяем, включен ли сервер
+                if server_instance.is_enabled():
+                    servers[server_name] = server_instance
+                    logger.info(f"✅ Сервер {server_name} загружен и включен")
+                else:
+                    logger.info(f"ℹ️ Сервер {server_name} отключен")
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Не удалось загрузить сервер {server_name}: {e}")
+        
+        return servers
     
     async def initialize_servers(self):
         """Инициализирует подключения к MCP серверам"""
@@ -303,65 +227,48 @@ class MCPClient:
         except Exception as e:
             logger.error(f"❌ Ошибка подключения к Confluence MCP серверу: {e}")
     
-    async def call_tool(self, server_name: str, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Вызывает инструмент на MCP сервере"""
-        try:
-            if server_name not in self.sessions:
-                return {"error": f"MCP сервер {server_name} не подключен"}
-            
-            session = self.sessions[server_name]
-            result = await session.call_tool(tool_name, arguments)
-            return result
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка вызова инструмента {tool_name} на {server_name}: {e}")
-            return {"error": str(e)}
     
     async def get_all_tools(self) -> List[Dict]:
         """Возвращает все доступные инструменты для отправки в LLM"""
         all_tools = []
         
+        # Получаем список включенных сервисов
+        enabled_services = self._get_enabled_services()
+        
         # Собираем инструменты от внешних MCP серверов
         for server_name, tools in self.available_tools.items():
-            for tool in tools:
-                # Добавляем информацию о сервере к каждому инструменту
-                tool_with_server = tool.copy()
-                tool_with_server['server'] = server_name
-                all_tools.append(tool_with_server)
+            if server_name in enabled_services:
+                for tool in tools:
+                    # Добавляем информацию о сервере к каждому инструменту
+                    tool_with_server = tool.copy()
+                    tool_with_server['server'] = server_name
+                    all_tools.append(tool_with_server)
         
         # Собираем инструменты от встроенных серверов
         builtin_servers = self._get_builtin_servers()
         for server_name, server in builtin_servers.items():
-            try:
-                # Проверяем, что сервер доступен
-                if self._is_server_available(server_name, server):
-                    tools = server.get_tools()
-                    for tool in tools:
-                        tool_with_server = tool.copy()
-                        tool_with_server['server'] = server_name
-                        all_tools.append(tool_with_server)
-            except Exception as e:
-                logger.warning(f"⚠️ Не удалось получить инструменты от {server_name}: {e}")
+            if server_name in enabled_services:
+                try:
+                    # Проверяем, что сервер доступен
+                    if self._is_server_available(server_name, server):
+                        tools = server.get_tools()
+                        for tool in tools:
+                            tool_with_server = tool.copy()
+                            tool_with_server['server'] = server_name
+                            all_tools.append(tool_with_server)
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось получить инструменты от {server_name}: {e}")
         
         return all_tools
     
     def _is_server_available(self, server_name: str, server: Any) -> bool:
         """Проверяет доступность сервера"""
         try:
-            if server_name == 'jira':
-                return server.jira is not None
-            elif server_name == 'gitlab':
-                return server.gl is not None
-            elif server_name == 'confluence':
-                return server.confluence is not None
-            elif server_name == 'onec':
-                return server.auth is not None
-            elif server_name == 'ldap':
-                # Проверяем, включен ли LDAP в конфигурации
-                ad_config = self.config_manager.get_service_config('active_directory')
-                if not ad_config.get('enabled', False):
-                    return False
-                return server.connection is not None
+            # Проверяем, что сервер включен и имеет метод check_health
+            if hasattr(server, 'is_enabled') and hasattr(server, 'check_health'):
+                if server.is_enabled():
+                    health = server.check_health()
+                    return health.get('status') == 'healthy'
             return False
         except Exception:
             return False
@@ -453,6 +360,23 @@ class MCPClient:
         
         self.sessions.clear()
         self.available_tools.clear()
+    
+    def _get_enabled_services(self) -> List[str]:
+        """Получает список включенных сервисов"""
+        enabled_services = []
+        
+        # Получаем встроенные серверы
+        builtin_servers = self._get_builtin_servers()
+        
+        # Проверяем каждый сервер
+        for server_name, server in builtin_servers.items():
+            try:
+                if server.is_enabled():
+                    enabled_services.append(server_name)
+            except Exception as e:
+                logger.warning(f"Не удалось проверить статус сервера {server_name}: {e}")
+        
+        return enabled_services
 
 # Глобальный экземпляр упрощенного MCP клиента
 mcp_client = MCPClient()

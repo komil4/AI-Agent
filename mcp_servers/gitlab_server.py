@@ -2,9 +2,56 @@ import os
 import gitlab
 from typing import Dict, Any, List
 from config.config_manager import ConfigManager
+from . import BaseMCPServer
 
-class GitLabMCPServer:
+class GitLabMCPServer(BaseMCPServer):
+    """MCP сервер для работы с GitLab - управление репозиториями, проектами, merge requests и коммитами"""
+    
     def __init__(self):
+        super().__init__()
+        self.description = "GitLab - управление репозиториями, проектами, merge requests и коммитами"
+        self.tools = [
+            {
+                "name": "list_projects",
+                "description": "Получает список проектов GitLab",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "search": {"type": "string", "description": "Поисковый запрос"},
+                        "per_page": {"type": "integer", "description": "Количество результатов на странице"}
+                    }
+                }
+            },
+            {
+                "name": "get_project_commits",
+                "description": "Получает коммиты проекта",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "project_name": {"type": "string", "description": "Название проекта"},
+                        "project_id": {"type": "string", "description": "ID проекта"},
+                        "per_page": {"type": "integer", "description": "Количество коммитов"},
+                        "author_email": {"type": "string", "description": "Email автора для фильтрации"}
+                    }
+                }
+            },
+            {
+                "name": "create_merge_request",
+                "description": "Создает merge request в GitLab",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "project_name": {"type": "string", "description": "Название проекта"},
+                        "project_id": {"type": "string", "description": "ID проекта"},
+                        "title": {"type": "string", "description": "Заголовок merge request"},
+                        "description": {"type": "string", "description": "Описание merge request"},
+                        "source_branch": {"type": "string", "description": "Исходная ветка"},
+                        "target_branch": {"type": "string", "description": "Целевая ветка"}
+                    },
+                    "required": ["title", "source_branch", "target_branch"]
+                }
+            }
+        ]
         self.config_manager = ConfigManager()
         self.gitlab_url = None
         self.gitlab_token = None
