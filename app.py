@@ -565,14 +565,14 @@ async def chat(chat_message: ChatMessage, request: Request):
         
         # Сохраняем сообщение пользователя
         logger.info("💾 Сохраняем сообщение пользователя...")
-        user_message_obj = chat_service.add_message(
+        user_message_data = chat_service.add_message(
             active_session.id, 
             db_user.id, 
             'user', 
             user_message,
             {'ip': request.client.host if request.client else None}
         )
-        logger.info(f"✅ Сообщение пользователя сохранено: {user_message_obj.id}")
+        logger.info(f"✅ Сообщение пользователя сохранено: {user_message_data['id']}")
         
         # Добавляем информацию о пользователе в контекст
         user_context = {
@@ -592,14 +592,14 @@ async def chat(chat_message: ChatMessage, request: Request):
         
         # Сохраняем ответ ассистента
         logger.info("💾 Сохраняем ответ ассистента...")
-        assistant_message_obj = chat_service.add_message(
+        assistant_message_data = chat_service.add_message(
             active_session.id, 
             db_user.id, 
             'assistant', 
             response,
             {'session_id': active_session.id}
         )
-        logger.info(f"✅ Ответ ассистента сохранен: {assistant_message_obj.id}")
+        logger.info(f"✅ Ответ ассистента сохранен: {assistant_message_data['id']}")
         
         return ChatResponse(
             response=response,
@@ -993,13 +993,13 @@ async def get_chat_sessions(request: Request):
         return {
             "sessions": [
                 {
-                    "id": session.id,
-                    "name": session.session_name,
-                    "created_at": session.created_at.isoformat(),
-                    "updated_at": session.updated_at.isoformat(),
-                    "is_active": session.is_active
+                    "id": session_data["id"],
+                    "name": session_data["session_name"],
+                    "created_at": session_data["created_at"].isoformat(),
+                    "updated_at": session_data["updated_at"].isoformat(),
+                    "is_active": session_data["is_active"]
                 }
-                for session in sessions
+                for session_data in sessions
             ]
         }
     except Exception as e:
@@ -1014,8 +1014,8 @@ async def get_session_history(session_id: int, request: Request):
         db_user = chat_service.get_or_create_user(user.get('username'), user)
         
         # Проверяем, что сессия принадлежит пользователю
-        session = chat_service.get_user_sessions(db_user.id)
-        if not any(s.id == session_id for s in session):
+        sessions = chat_service.get_user_sessions(db_user.id)
+        if not any(session_data["id"] == session_id for session_data in sessions):
             raise HTTPException(status_code=403, detail="Доступ к сессии запрещен")
         
         history = chat_service.get_session_history(session_id)
@@ -1032,8 +1032,8 @@ async def close_session(session_id: int, request: Request):
         db_user = chat_service.get_or_create_user(user.get('username'), user)
         
         # Проверяем, что сессия принадлежит пользователю
-        session = chat_service.get_user_sessions(db_user.id)
-        if not any(s.id == session_id for s in session):
+        sessions = chat_service.get_user_sessions(db_user.id)
+        if not any(session_data["id"] == session_id for session_data in sessions):
             raise HTTPException(status_code=403, detail="Доступ к сессии запрещен")
         
         chat_service.close_session(session_id)

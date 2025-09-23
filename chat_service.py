@@ -115,6 +115,8 @@ class ChatService:
                 else:
                     logger.info(f"✅ Обновлен пользователь: {username} (ID: {user.id}) - только last_login")
             
+            # Отсоединяем объект от сессии и возвращаем данные
+            session.expunge(user)
             return user
     
     def create_chat_session(self, user_id: int, session_name: str = None) -> ChatSession:
@@ -131,25 +133,50 @@ class ChatService:
             session.add(chat_session)
             session.commit()
             session.refresh(chat_session)
+            
+            # Отсоединяем объект от сессии
+            session.expunge(chat_session)
+            
             logger.info(f"✅ Создана новая сессия чата: {session_name}")
             return chat_session
     
     def get_active_session(self, user_id: int) -> Optional[ChatSession]:
         """Получает активную сессию пользователя"""
         with get_db() as session:
-            return session.query(ChatSession).filter(
+            chat_session = session.query(ChatSession).filter(
                 and_(ChatSession.user_id == user_id, ChatSession.is_active == True)
             ).first()
+            
+            if chat_session:
+                # Отсоединяем объект от сессии
+                session.expunge(chat_session)
+            
+            return chat_session
     
-    def get_user_sessions(self, user_id: int, limit: int = 20) -> List[ChatSession]:
+    def get_user_sessions(self, user_id: int, limit: int = 20) -> List[Dict[str, Any]]:
         """Получает список сессий пользователя"""
         with get_db() as session:
-            return session.query(ChatSession).filter(
+            sessions = session.query(ChatSession).filter(
                 ChatSession.user_id == user_id
             ).order_by(desc(ChatSession.updated_at)).limit(limit).all()
+            
+            # Отсоединяем объекты от сессии и возвращаем данные
+            result = []
+            for session_obj in sessions:
+                session.expunge(session_obj)
+                result.append({
+                    'id': session_obj.id,
+                    'user_id': session_obj.user_id,
+                    'session_name': session_obj.session_name,
+                    'created_at': session_obj.created_at,
+                    'updated_at': session_obj.updated_at,
+                    'is_active': session_obj.is_active
+                })
+            
+            return result
     
     def add_message(self, session_id: int, user_id: int, message_type: str, 
-                   content: str, metadata: Dict[str, Any] = None) -> Message:
+                   content: str, metadata: Dict[str, Any] = None) -> Dict[str, Any]:
         """Добавляет сообщение в сессию"""
         with get_db() as session:
             message = Message(
@@ -169,19 +196,46 @@ class ChatService:
                 chat_session.updated_at = datetime.utcnow()
                 session.commit()
             
+            # Отсоединяем объект от сессии и возвращаем данные
+            session.expunge(message)
+            
             logger.info(f"✅ Добавлено сообщение в сессию {session_id}")
-            return message
+            return {
+                'id': message.id,
+                'session_id': message.session_id,
+                'user_id': message.user_id,
+                'message_type': message.message_type,
+                'content': message.content,
+                'message_metadata': message.message_metadata,
+                'created_at': message.created_at
+            }
     
-    def get_session_messages(self, session_id: int, limit: int = 50) -> List[Message]:
+    def get_session_messages(self, session_id: int, limit: int = 50) -> List[Dict[str, Any]]:
         """Получает сообщения сессии"""
         with get_db() as session:
-            return session.query(Message).filter(
+            messages = session.query(Message).filter(
                 Message.session_id == session_id
             ).order_by(Message.created_at).limit(limit).all()
+            
+            # Отсоединяем объекты от сессии и возвращаем данные
+            result = []
+            for message in messages:
+                session.expunge(message)
+                result.append({
+                    'id': message.id,
+                    'session_id': message.session_id,
+                    'user_id': message.user_id,
+                    'message_type': message.message_type,
+                    'content': message.content,
+                    'message_metadata': message.message_metadata,
+                    'created_at': message.created_at
+                })
+            
+            return result
     
     def add_tool_usage(self, message_id: int, tool_name: str, server_name: str,
                       arguments: Dict[str, Any] = None, result: Dict[str, Any] = None,
-                      execution_time_ms: int = None) -> ToolUsage:
+                      execution_time_ms: int = None) -> Dict[str, Any]:
         """Добавляет информацию об использовании инструмента"""
         with get_db() as session:
             tool_usage = ToolUsage(
@@ -195,8 +249,21 @@ class ChatService:
             session.add(tool_usage)
             session.commit()
             session.refresh(tool_usage)
+            
+            # Отсоединяем объект от сессии и возвращаем данные
+            session.expunge(tool_usage)
+            
             logger.info(f"✅ Добавлено использование инструмента: {tool_name}")
-            return tool_usage
+            return {
+                'id': tool_usage.id,
+                'message_id': tool_usage.message_id,
+                'tool_name': tool_usage.tool_name,
+                'server_name': tool_usage.server_name,
+                'arguments': tool_usage.arguments,
+                'result': tool_usage.result,
+                'execution_time_ms': tool_usage.execution_time_ms,
+                'created_at': tool_usage.created_at
+            }
     
     def get_session_history(self, session_id: int) -> List[Dict[str, Any]]:
         """Получает полную историю сессии с инструментами"""
@@ -207,6 +274,9 @@ class ChatService:
             
             history = []
             for msg in messages:
+                # Отсоединяем объект от сессии перед использованием
+                session.expunge(msg)
+                
                 message_data = {
                     'id': msg.id,
                     'type': msg.message_type,
@@ -216,8 +286,10 @@ class ChatService:
                     'tools': []
                 }
                 
-                # Добавляем информацию об использованных инструментах
-                for tool in msg.tool_usage:
+                # Получаем инструменты отдельным запросом
+                tools = session.query(ToolUsage).filter(ToolUsage.message_id == msg.id).all()
+                for tool in tools:
+                    session.expunge(tool)
                     message_data['tools'].append({
                         'tool_name': tool.tool_name,
                         'server_name': tool.server_name,
