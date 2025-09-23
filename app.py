@@ -215,101 +215,117 @@ async def login_page():
 
 @app.post("/api/auth/login")
 async def login(login_data: LoginRequest):
-    """Аутентификация пользователя через Active Directory или admin"""
+    """Аутентификация пользователя через локальную БД или LDAP"""
     try:
-        # Сначала проверяем, не admin ли это
-        if login_data.username.lower() == "admin":
-            # Проверяем пароль admin
-            if admin_auth.authenticate_admin(login_data.username, login_data.password):
-                # Создаем пользователя admin
-                user_info = {
-                    "username": "admin",
-                    "display_name": "Administrator",
-                    "email": "admin@localhost",
-                    "groups": ["admin"],
-                    "is_admin": True
-                }
-                
-                # Создаем или обновляем пользователя admin в базе данных
-                logger.info(f"🔍 Создаем/обновляем пользователя admin в БД: {user_info['username']}")
-                db_user = chat_service.get_or_create_user(user_info['username'], user_info)
-                logger.info(f"✅ Пользователь admin создан/обновлен в БД: {db_user.id}")
-                
-                # Создаем JWT токен
-                access_token = ad_auth.create_access_token(user_info)
-                
-                # Создаем сессию
-                session_id = session_manager.create_session(user_info, access_token)
-                
-                # Создаем ответ с cookie
-                response = LoginResponse(
-                    success=True,
-                    message="Успешная аутентификация admin",
-                    user_info=user_info
-                )
-                
-                # Устанавливаем cookie с session_id
-                from fastapi.responses import JSONResponse
-                json_response = JSONResponse(
-                    content=response.dict(),
-                    status_code=200
-                )
-                json_response.set_cookie(
-                    key="session_id",
-                    value=session_id,
-                    httponly=True,
-                    secure=False,  # Установите True для HTTPS
-                    samesite="lax",
-                    max_age=24*60*60  # 24 часа
-                )
-                
-                return json_response
+        logger.info(f"🔍 Попытка входа пользователя: {login_data.username}")
         
-        # Аутентификация через AD
-        user_info = ad_auth.authenticate_user(login_data.username, login_data.password)
+        # Шаг 1: Проверяем локальную аутентификацию в таблице users
+        logger.info("📋 Проверяем локальную аутентификацию в БД...")
+        db_user = chat_service.authenticate_local_user(login_data.username, login_data.password)
         
-        if not user_info:
+        if db_user:
+            # Локальная аутентификация успешна
+            logger.info(f"✅ Локальная аутентификация успешна: {db_user.username}")
+            
+            # Подготавливаем данные пользователя для сессии
+            user_info = {
+                "username": db_user.username,
+                "display_name": db_user.display_name or db_user.username,
+                "email": db_user.email or "",
+                "groups": db_user.groups or [],
+                "is_admin": db_user.is_admin
+            }
+            
+            # Создаем JWT токен и сессию
+            access_token = ad_auth.create_access_token(user_info)
+            session_id = session_manager.create_session(user_info, access_token)
+            
+            # Создаем ответ
+            response = LoginResponse(
+                success=True,
+                message="Успешная локальная аутентификация",
+                user_info=user_info
+            )
+            
+            # Устанавливаем cookie
+            from fastapi.responses import JSONResponse
+            json_response = JSONResponse(content=response.dict(), status_code=200)
+            json_response.set_cookie(
+                key="session_id",
+                value=session_id,
+                httponly=True,
+                secure=False,
+                samesite="lax",
+                max_age=24*60*60
+            )
+            
+            return json_response
+        
+        # Шаг 2: Если локальная аутентификация не удалась, проверяем LDAP (если включен)
+        logger.info("🔍 Локальная аутентификация не удалась, проверяем LDAP...")
+        
+        # Получаем конфигурацию LDAP
+        ad_config = config_manager.get_service_config('active_directory')
+        ldap_enabled = ad_config.get('enabled', False)
+        
+        if not ldap_enabled:
+            logger.warning("❌ LDAP отключен в конфигурации")
+            return LoginResponse(
+                success=False,
+                message="Неверные учетные данные. LDAP отключен."
+            )
+        
+        # Аутентификация через LDAP
+        logger.info("🌐 Проверяем аутентификацию через LDAP...")
+        ldap_user_info = ad_auth.authenticate_user(login_data.username, login_data.password)
+        
+        if not ldap_user_info:
+            logger.warning(f"❌ LDAP аутентификация не удалась для: {login_data.username}")
             return LoginResponse(
                 success=False,
                 message="Неверные учетные данные или пользователь не найден в Active Directory"
             )
         
-        # Создаем или обновляем пользователя в базе данных при первом входе
-        logger.info(f"🔍 Создаем/обновляем пользователя LDAP в БД: {user_info['username']}")
-        db_user = chat_service.get_or_create_user(user_info['username'], user_info)
-        logger.info(f"✅ Пользователь LDAP создан/обновлен в БД: {db_user.id}")
+        # Шаг 3: LDAP аутентификация успешна - создаем/обновляем пользователя в БД
+        logger.info(f"✅ LDAP аутентификация успешна: {ldap_user_info['username']}")
         
-        # Создаем JWT токен
-        access_token = ad_auth.create_access_token(user_info)
+        # Добавляем флаг LDAP пользователя
+        ldap_user_info['is_ldap_user'] = True
         
-        # Создаем сессию
-        session_id = session_manager.create_session(user_info, access_token)
+        # Создаем или обновляем пользователя в БД
+        logger.info(f"💾 Создаем/обновляем LDAP пользователя в БД: {ldap_user_info['username']}")
+        db_user = chat_service.get_or_create_user(ldap_user_info['username'], ldap_user_info)
+        logger.info(f"✅ LDAP пользователь создан/обновлен в БД: {db_user.id}")
         
-        # Создаем ответ с cookie
+        # Создаем JWT токен и сессию
+        access_token = ad_auth.create_access_token(ldap_user_info)
+        session_id = session_manager.create_session(ldap_user_info, access_token)
+        
+        # Создаем ответ
         response = LoginResponse(
             success=True,
-            message="Успешная аутентификация",
-            user_info=user_info
+            message="Успешная LDAP аутентификация",
+            user_info=ldap_user_info
         )
         
-        # Устанавливаем cookie с session_id
+        # Устанавливаем cookie
         from fastapi.responses import JSONResponse
-        json_response = JSONResponse(
-            content=response.dict(),
-            status_code=200
-        )
+        json_response = JSONResponse(content=response.dict(), status_code=200)
         json_response.set_cookie(
             key="session_id",
             value=session_id,
             httponly=True,
-            secure=False,  # Установите True для HTTPS
+            secure=False,
             samesite="lax",
-            max_age=24*60*60  # 24 часа
+            max_age=24*60*60
         )
         
         return json_response
     
     except Exception as e:
+        logger.error(f"❌ Ошибка аутентификации: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
         return LoginResponse(
             success=False,
             message=f"Ошибка аутентификации: {str(e)}"

@@ -20,10 +20,12 @@ class User(Base):
     
     id = Column(Integer, primary_key=True)
     username = Column(String(100), unique=True, nullable=False)
+    password_hash = Column(String(255))  # Хеш пароля для локальных пользователей
     display_name = Column(String(200))
     email = Column(String(200))
     groups = Column(ARRAY(String))
     is_admin = Column(Boolean, default=False)
+    is_ldap_user = Column(Boolean, default=False)  # Флаг LDAP пользователя
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime)
     

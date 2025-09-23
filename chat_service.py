@@ -10,6 +10,16 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from database import get_db, User, ChatSession, Message, ToolUsage
 
+# Импорт для работы с паролями
+try:
+    from passlib.context import CryptContext
+    PASSWORD_AVAILABLE = True
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+except ImportError:
+    PASSWORD_AVAILABLE = False
+    pwd_context = None
+    print("⚠️ passlib не установлен. Хеширование паролей будет недоступно.")
+
 logger = logging.getLogger(__name__)
 
 class ChatService:
@@ -17,6 +27,37 @@ class ChatService:
     
     def __init__(self):
         pass
+    
+    def hash_password(self, password: str) -> str:
+        """Хеширует пароль"""
+        if not PASSWORD_AVAILABLE:
+            raise RuntimeError("passlib не установлен")
+        return pwd_context.hash(password)
+    
+    def verify_password(self, plain_password: str, hashed_password: str) -> bool:
+        """Проверяет пароль"""
+        if not PASSWORD_AVAILABLE:
+            raise RuntimeError("passlib не установлен")
+        return pwd_context.verify(plain_password, hashed_password)
+    
+    def authenticate_local_user(self, username: str, password: str) -> Optional[User]:
+        """Аутентификация локального пользователя по паролю"""
+        with get_db() as session:
+            user = session.query(User).filter(
+                User.username == username,
+                User.is_ldap_user == False,
+                User.password_hash.isnot(None)
+            ).first()
+            
+            if user and self.verify_password(password, user.password_hash):
+                # Обновляем время последнего входа
+                user.last_login = datetime.utcnow()
+                session.commit()
+                logger.info(f"✅ Локальная аутентификация успешна: {username}")
+                return user
+            
+            logger.warning(f"❌ Неверные учетные данные для локального пользователя: {username}")
+            return None
     
     def get_or_create_user(self, username: str, user_info: Dict[str, Any]) -> User:
         """Получает или создает пользователя"""
@@ -27,10 +68,12 @@ class ChatService:
                 # Создаем нового пользователя
                 user = User(
                     username=username,
+                    password_hash=user_info.get('password_hash'),
                     display_name=user_info.get('display_name', username),
                     email=user_info.get('email', ''),
                     groups=user_info.get('groups', []),
-                    is_admin=user_info.get('is_admin', False)
+                    is_admin=user_info.get('is_admin', False),
+                    is_ldap_user=user_info.get('is_ldap_user', False)
                 )
                 session.add(user)
                 session.commit()
@@ -40,6 +83,7 @@ class ChatService:
                 logger.info(f"   Email: {user.email}")
                 logger.info(f"   Groups: {user.groups}")
                 logger.info(f"   Is Admin: {user.is_admin}")
+                logger.info(f"   Is LDAP User: {user.is_ldap_user}")
             else:
                 # Обновляем информацию о пользователе
                 old_display_name = user.display_name

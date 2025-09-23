@@ -5,10 +5,12 @@
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255),
     display_name VARCHAR(200),
     email VARCHAR(200),
     groups TEXT[],
     is_admin BOOLEAN DEFAULT FALSE,
+    is_ldap_user BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMP
 );
