@@ -8,6 +8,7 @@ MCP сервер для работы с Jira с использованием с�
 # ============================================================================
 
 import os
+import logging
 import requests
 from jira import JIRA
 from typing import Dict, Any, List, Optional

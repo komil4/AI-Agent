@@ -293,52 +293,64 @@ class ConfigManager:
     def _test_jira_connection(self) -> Dict[str, Any]:
         """Тестирует подключение к Jira"""
         try:
-            from mcp_servers.jira_server import JiraMCPServer
-            jira_server = JiraMCPServer()
-            success = jira_server.test_connection()
-            return {
-                "success": success,
-                "message": "Подключение к Jira успешно" if success else "Ошибка подключения к Jira"
-            }
+            from mcp_servers import create_server_instance
+            jira_server = create_server_instance('jira')
+            if jira_server:
+                success = jira_server.test_connection()
+                return {
+                    "success": success,
+                    "message": "Подключение к Jira успешно" if success else "Ошибка подключения к Jira"
+                }
+            else:
+                return {"success": False, "message": "Jira сервер не найден"}
         except Exception as e:
             return {"success": False, "message": f"Ошибка тестирования Jira: {str(e)}"}
     
     def _test_atlassian_connection(self) -> Dict[str, Any]:
         """Тестирует подключение к Atlassian"""
         try:
-            from mcp_servers.atlassian_server import AtlassianMCPServer
-            atlassian_server = AtlassianMCPServer()
-            success = atlassian_server.test_connection()
-            return {
-                "success": success,
-                "message": "Подключение к Atlassian успешно" if success else "Ошибка подключения к Atlassian"
-            }
+            from mcp_servers import create_server_instance
+            atlassian_server = create_server_instance('atlassian')
+            if atlassian_server:
+                success = atlassian_server.test_connection()
+                return {
+                    "success": success,
+                    "message": "Подключение к Atlassian успешно" if success else "Ошибка подключения к Atlassian"
+                }
+            else:
+                return {"success": False, "message": "Atlassian сервер не найден"}
         except Exception as e:
             return {"success": False, "message": f"Ошибка тестирования Atlassian: {str(e)}"}
     
     def _test_gitlab_connection(self) -> Dict[str, Any]:
         """Тестирует подключение к GitLab"""
         try:
-            from mcp_servers.gitlab_server import GitLabMCPServer
-            gitlab_server = GitLabMCPServer()
-            success = gitlab_server.test_connection()
-            return {
-                "success": success,
-                "message": "Подключение к GitLab успешно" if success else "Ошибка подключения к GitLab"
-            }
+            from mcp_servers import create_server_instance
+            gitlab_server = create_server_instance('gitlab')
+            if gitlab_server:
+                success = gitlab_server.test_connection()
+                return {
+                    "success": success,
+                    "message": "Подключение к GitLab успешно" if success else "Ошибка подключения к GitLab"
+                }
+            else:
+                return {"success": False, "message": "GitLab сервер не найден"}
         except Exception as e:
             return {"success": False, "message": f"Ошибка тестирования GitLab: {str(e)}"}
     
     def _test_onec_connection(self) -> Dict[str, Any]:
         """Тестирует подключение к 1C"""
         try:
-            from mcp_servers.onec_server import OneCMCPServer
-            onec_server = OneCMCPServer()
-            success = onec_server.test_connection()
-            return {
-                "success": success,
-                "message": "Подключение к 1C успешно" if success else "Ошибка подключения к 1C"
-            }
+            from mcp_servers import create_server_instance
+            onec_server = create_server_instance('onec')
+            if onec_server:
+                success = onec_server.test_connection()
+                return {
+                    "success": success,
+                    "message": "Подключение к 1C успешно" if success else "Ошибка подключения к 1C"
+                }
+            else:
+                return {"success": False, "message": "1C сервер не найден"}
         except Exception as e:
             return {"success": False, "message": f"Ошибка тестирования 1C: {str(e)}"}
     

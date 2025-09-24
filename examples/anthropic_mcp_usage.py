@@ -12,8 +12,7 @@ import logging
 from typing import Dict, Any
 
 # Импорт MCP серверов
-from mcp_servers.jira_server_fastmcp import JiraFastMCPServer
-from mcp_servers.gitlab_server_fastmcp import GitLabFastMCPServer
+from mcp_servers import create_server_instance
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -28,8 +27,8 @@ class MCPExample:
     
     def __init__(self):
         """Инициализация примера"""
-        self.jira_server = JiraFastMCPServer()
-        self.gitlab_server = GitLabFastMCPServer()
+        self.jira_server = create_server_instance('jira')
+        self.gitlab_server = create_server_instance('gitlab')
     
     async def demonstrate_jira_tools(self):
         """Демонстрация инструментов Jira"""

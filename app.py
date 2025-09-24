@@ -27,10 +27,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Импорт модулей
-from mcp_servers.jira_server import JiraMCPServer
-from mcp_servers.atlassian_server import AtlassianMCPServer
-from mcp_servers.gitlab_server import GitLabMCPServer
-from mcp_servers.onec_server import OneCMCPServer
+# MCP серверы теперь загружаются автоматически через server_discovery
 from llm_client import LLMClient
 from database import init_database
 from chat_service import chat_service
