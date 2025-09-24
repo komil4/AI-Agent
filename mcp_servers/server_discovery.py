@@ -83,9 +83,13 @@ class MCPServerDiscovery:
                 if obj.__module__ == module.__name__:
                     # Ищем классы, которые заканчиваются на MCPServer
                     if name.endswith('MCPServer'):
-                        # Извлекаем имя сервера из имени класса
-                        server_name = self._extract_server_name(name, module_name)
-                        server_classes[server_name] = obj
+                        # Проверяем, что это не абстрактный класс
+                        if not inspect.isabstract(obj):
+                            # Извлекаем имя сервера из имени класса
+                            server_name = self._extract_server_name(name, module_name)
+                            server_classes[server_name] = obj
+                        else:
+                            logger.debug(f"🔄 Пропускаем абстрактный класс: {name}")
                         
         except Exception as e:
             logger.warning(f"⚠️ Ошибка поиска классов в модуле {module_name}: {e}")

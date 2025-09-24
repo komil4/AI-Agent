@@ -846,8 +846,8 @@ class OneCMCPServer(BaseMCPServer):
             if hasattr(self, 'auth') and self.auth:
                 # Пытаемся выполнить простой запрос для проверки подключения
                 response = requests.get(
-                    f"{self.url}{self.api_path}/ping",
-                    headers=self.auth,
+                    f"{self.url}{self.api_path}/health",
+                    auth=self.auth,
                     timeout=5
                 )
                 
