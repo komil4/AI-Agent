@@ -24,6 +24,7 @@ class MCPServerDiscovery:
         """
         self.servers_dir = servers_dir or os.path.dirname(__file__)
         self.discovered_servers = {}
+        self._server_instances = {}  # Кэш экземпляров серверов
         self._scan_servers()
     
     def _scan_servers(self):
@@ -119,11 +120,20 @@ class MCPServerDiscovery:
         return list(self.discovered_servers.keys())
     
     def create_server_instance(self, server_name: str) -> Any:
-        """Создает экземпляр сервера по имени"""
+        """Создает экземпляр сервера по имени с кэшированием"""
+        # Возвращаем кэшированный экземпляр, если он есть
+        if server_name in self._server_instances:
+            logger.debug(f"🔄 Используем кэшированный экземпляр сервера {server_name}")
+            return self._server_instances[server_name]
+        
         server_class = self.get_server_class(server_name)
         if server_class:
             try:
-                return server_class()
+                instance = server_class()
+                # Кэшируем экземпляр
+                self._server_instances[server_name] = instance
+                logger.debug(f"✅ Создан и закэширован экземпляр сервера {server_name}")
+                return instance
             except Exception as e:
                 logger.error(f"❌ Ошибка создания экземпляра сервера {server_name}: {e}")
                 return None
@@ -132,8 +142,14 @@ class MCPServerDiscovery:
     def rescan_servers(self):
         """Пересканирует серверы (полезно при добавлении новых файлов)"""
         self.discovered_servers.clear()
+        self._server_instances.clear()  # Сбрасываем кэш экземпляров
         self._scan_servers()
         logger.info(f"🔄 Пересканирование завершено. Обнаружено серверов: {len(self.discovered_servers)}")
+    
+    def clear_instance_cache(self):
+        """Очищает кэш экземпляров серверов"""
+        self._server_instances.clear()
+        logger.info("🔄 Кэш экземпляров серверов очищен")
 
 # Глобальный экземпляр для использования в других модулях
 server_discovery = MCPServerDiscovery()

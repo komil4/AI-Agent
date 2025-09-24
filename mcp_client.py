@@ -30,6 +30,11 @@ class MCPClient:
         self.sessions: Dict[str, ClientSession] = {}
         self.available_tools: Dict[str, List[Dict]] = {}
         self.server_tools: Dict[str, List[Dict]] = {}
+        
+        # Кэширование серверов
+        self._cached_servers: Dict[str, Any] = {}
+        self._servers_initialized = False
+        
         self._load_config()
         self._define_tools()
     
@@ -61,7 +66,12 @@ class MCPClient:
         self.server_tools = all_tools
     
     def _get_builtin_servers(self) -> Dict[str, Any]:
-        """Получает экземпляры встроенных MCP серверов через автоматическое обнаружение"""
+        """Получает экземпляры встроенных MCP серверов через автоматическое обнаружение с кэшированием"""
+        # Возвращаем кэшированные серверы, если они уже инициализированы
+        if self._servers_initialized and self._cached_servers:
+            logger.debug(f"🔄 Используем кэшированные серверы: {list(self._cached_servers.keys())}")
+            return self._cached_servers
+        
         servers = {}
         
         try:
@@ -73,26 +83,42 @@ class MCPClient:
             
             for server_name in discovered_servers.keys():
                 try:
-                    # Создаем экземпляр сервера
-                    server_instance = create_server_instance(server_name)
-                    
-                    if server_instance:
-                        # Проверяем, включен ли сервер
-                        if server_instance.is_enabled():
-                            servers[server_name] = server_instance
-                            logger.info(f"✅ Сервер {server_name} загружен и включен")
+                    # Создаем экземпляр сервера только если его нет в кэше
+                    if server_name not in self._cached_servers:
+                        server_instance = create_server_instance(server_name)
+                        
+                        if server_instance:
+                            # Проверяем, включен ли сервер
+                            if server_instance.is_enabled():
+                                self._cached_servers[server_name] = server_instance
+                                logger.info(f"✅ Сервер {server_name} загружен и включен")
+                            else:
+                                logger.info(f"ℹ️ Сервер {server_name} отключен")
                         else:
-                            logger.info(f"ℹ️ Сервер {server_name} отключен")
+                            logger.warning(f"⚠️ Не удалось создать экземпляр сервера {server_name}")
                     else:
-                        logger.warning(f"⚠️ Не удалось создать экземпляр сервера {server_name}")
+                        logger.debug(f"🔄 Используем кэшированный сервер {server_name}")
+                    
+                    # Добавляем в результат
+                    if server_name in self._cached_servers:
+                        servers[server_name] = self._cached_servers[server_name]
                         
                 except Exception as e:
                     logger.warning(f"⚠️ Ошибка загрузки сервера {server_name}: {e}")
-                    
+            
+            # Помечаем серверы как инициализированные
+            self._servers_initialized = True
+            
         except Exception as e:
             logger.error(f"❌ Ошибка автоматического обнаружения серверов: {e}")
         
         return servers
+    
+    def invalidate_server_cache(self):
+        """Сбрасывает кэш серверов (полезно при изменении конфигурации)"""
+        self._cached_servers.clear()
+        self._servers_initialized = False
+        logger.info("🔄 Кэш серверов сброшен")
     
     async def initialize_servers(self):
         """Инициализирует подключения к MCP серверам"""

@@ -64,6 +64,11 @@ admin_auth = AdminAuth()
 llm_client = LLMClient()
 code_analyzer = CodeAnalyzer()
 
+# Кэширование статуса сервисов
+_services_status_cache = None
+_services_status_cache_time = 0
+_services_status_cache_interval = 30  # секунд
+
 # MCP серверы теперь инициализируются автоматически через server_discovery
 
 # Создание FastAPI приложения
@@ -922,46 +927,63 @@ async def analyze_code(analysis_request: CodeAnalysisRequest, request: Request):
 
 @app.get("/api/services/status", response_model=HealthResponse)
 async def get_services_status():
-    """Получает статус всех сервисов"""
+    """Получает статус всех сервисов с кэшированием"""
+    global _services_status_cache, _services_status_cache_time
+    
     try:
-        # Получаем статус MCP серверов динамически
-        from mcp_servers import get_discovered_servers, create_server_instance
+        current_time = datetime.utcnow().timestamp()
         
-        mcp_services = {}
-        discovered_servers = get_discovered_servers()
-        
-        for server_name in discovered_servers.keys():
-            try:
-                server = create_server_instance(server_name)
-                if server:
-                    mcp_services[server_name] = {"status": "active" if server.test_connection() else "inactive"}
-                else:
+        # Проверяем, нужно ли обновить кэш
+        if (_services_status_cache is None or 
+            current_time - _services_status_cache_time > _services_status_cache_interval):
+            
+            logger.debug("🔄 Обновляем кэш статуса сервисов")
+            
+            # Используем кэшированные серверы из mcp_client
+            mcp_services = {}
+            
+            # Получаем кэшированные серверы
+            cached_servers = mcp_client._get_builtin_servers()
+            
+            for server_name, server in cached_servers.items():
+                try:
+                    # Используем кэшированное состояние подключения
+                    health_status = server.get_health_status()
+                    mcp_services[server_name] = {"status": health_status.get('status', 'inactive')}
+                except Exception:
                     mcp_services[server_name] = {"status": "inactive"}
+            
+            # Проверяем статус LLM
+            llm_status = "active"
+            try:
+                if llm_client.provider:
+                    llm_status = "active"
+                else:
+                    llm_status = "inactive"
             except Exception:
-                mcp_services[server_name] = {"status": "inactive"}
-        
-        # Проверяем статус LLM
-        llm_status = "active"
-        try:
-            if llm_client.provider:
-                llm_status = "active"
-            else:
                 llm_status = "inactive"
-        except Exception:
-            llm_status = "inactive"
+            
+            services = {
+                **mcp_services,
+                "llm": {"status": llm_status},
+                "database": {"status": "active"},
+                "redis": {"status": "active" if session_manager.is_connected() else "inactive"}
+            }
+            
+            # Кэшируем результат
+            _services_status_cache = HealthResponse(
+                status="healthy",
+                services=services,
+                timestamp=datetime.utcnow().isoformat()
+            )
+            _services_status_cache_time = current_time
+            
+            logger.debug("✅ Кэш статуса сервисов обновлен")
+        else:
+            logger.debug("🔄 Используем кэшированный статус сервисов")
         
-        services = {
-            **mcp_services,
-            "llm": {"status": llm_status},
-            "database": {"status": "active"},
-            "redis": {"status": "active" if session_manager.is_connected() else "inactive"}
-        }
+        return _services_status_cache
         
-        return HealthResponse(
-            status="healthy",
-            services=services,
-            timestamp=datetime.utcnow().isoformat()
-        )
     except Exception as e:
         logger.error(f"❌ Ошибка получения статуса сервисов: {e}")
         return HealthResponse(
@@ -969,6 +991,13 @@ async def get_services_status():
             services={},
             timestamp=datetime.utcnow().isoformat()
         )
+
+def invalidate_services_status_cache():
+    """Сбрасывает кэш статуса сервисов (полезно при изменении конфигурации)"""
+    global _services_status_cache, _services_status_cache_time
+    _services_status_cache = None
+    _services_status_cache_time = 0
+    logger.info("🔄 Кэш статуса сервисов сброшен")
 
 # --- LLM провайдеры ---
 
@@ -1025,6 +1054,9 @@ def reinitialize_system():
     
     try:
         print("🔄 Переинициализация системы...")
+        
+        # Сбрасываем кэш статуса сервисов
+        invalidate_services_status_cache()
         
         # Переинициализация конфигурации
         config_manager = ConfigManager()
