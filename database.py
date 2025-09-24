@@ -34,6 +34,7 @@ class User(Base):
     groups = Column(ARRAY(String))
     is_admin = Column(Boolean, default=False)
     is_ldap_user = Column(Boolean, default=False)  # Флаг LDAP пользователя
+    user_context = Column(Text)  # Дополнительный контекст пользователя от LLM
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime)
     

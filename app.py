@@ -373,6 +373,11 @@ async def chat(chat_message: ChatMessage, request: Request):
         session_history = chat_service.get_session_history(active_session.id, limit=10)
         logger.info(f"✅ Получена история: {len(session_history)} сообщений")
         
+        # Получаем дополнительный контекст пользователя
+        logger.info("🧠 Получаем дополнительный контекст пользователя...")
+        user_additional_context = chat_service.get_user_context(db_user.id)
+        logger.info(f"✅ Контекст пользователя получен: {len(user_additional_context or '')} символов")
+        
         # Определяем, нужно ли использовать ReAct агента
         use_react = chat_message.use_react if hasattr(chat_message, 'use_react') else False
         
@@ -386,6 +391,7 @@ async def chat(chat_message: ChatMessage, request: Request):
             },
             'session_id': active_session.id,
             'chat_history': session_history,
+            'user_additional_context': user_additional_context or "",
             'use_react': use_react
         }
         
@@ -494,6 +500,238 @@ async def get_user_stats(request: Request):
     except Exception as e:
         logger.error(f"❌ Ошибка получения статистики: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка получения статистики: {str(e)}")
+
+# --- Управление контекстом пользователя ---
+
+@app.get("/api/user/context")
+async def get_user_context(request: Request):
+    """Получает контекст текущего пользователя"""
+    try:
+        # Получаем session_id из cookies
+        session_id = request.cookies.get('session_id')
+        
+        if not session_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Требуется аутентификация"
+            )
+        
+        # Проверяем сессию
+        session_data = session_manager.get_session(session_id)
+        if not session_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Сессия истекла"
+            )
+        
+        # Получаем ID пользователя
+        user_info = session_data.get('user_info', {})
+        user_id = user_info.get('id')
+        
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ID пользователя не найден в сессии"
+            )
+        
+        # Получаем контекст пользователя
+        context = chat_service.get_user_context(user_id)
+        
+        return {
+            "success": True,
+            "context": context or "",
+            "user_id": user_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения контекста пользователя: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка получения контекста: {str(e)}"
+        )
+
+@app.post("/api/user/context")
+async def save_user_context(request: Request, context_data: dict):
+    """Сохраняет контекст пользователя"""
+    try:
+        # Получаем session_id из cookies
+        session_id = request.cookies.get('session_id')
+        
+        if not session_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Требуется аутентификация"
+            )
+        
+        # Проверяем сессию
+        session_data = session_manager.get_session(session_id)
+        if not session_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Сессия истекла"
+            )
+        
+        # Получаем ID пользователя
+        user_info = session_data.get('user_info', {})
+        user_id = user_info.get('id')
+        
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ID пользователя не найден в сессии"
+            )
+        
+        # Получаем контекст из запроса
+        context = context_data.get('context', '')
+        if not context:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Контекст не может быть пустым"
+            )
+        
+        # Сохраняем контекст
+        success = chat_service.save_user_context(user_id, context)
+        
+        if success:
+            return {
+                "success": True,
+                "message": "Контекст успешно сохранен",
+                "user_id": user_id
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Ошибка сохранения контекста"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Ошибка сохранения контекста пользователя: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка сохранения контекста: {str(e)}"
+        )
+
+@app.put("/api/user/context")
+async def update_user_context(request: Request, context_data: dict):
+    """Обновляет контекст пользователя (добавляет к существующему)"""
+    try:
+        # Получаем session_id из cookies
+        session_id = request.cookies.get('session_id')
+        
+        if not session_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Требуется аутентификация"
+            )
+        
+        # Проверяем сессию
+        session_data = session_manager.get_session(session_id)
+        if not session_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Сессия истекла"
+            )
+        
+        # Получаем ID пользователя
+        user_info = session_data.get('user_info', {})
+        user_id = user_info.get('id')
+        
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ID пользователя не найден в сессии"
+            )
+        
+        # Получаем новый контекст из запроса
+        new_context = context_data.get('context', '')
+        if not new_context:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Контекст не может быть пустым"
+            )
+        
+        # Обновляем контекст
+        success = chat_service.update_user_context(user_id, new_context)
+        
+        if success:
+            return {
+                "success": True,
+                "message": "Контекст успешно обновлен",
+                "user_id": user_id
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Ошибка обновления контекста"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Ошибка обновления контекста пользователя: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка обновления контекста: {str(e)}"
+        )
+
+@app.delete("/api/user/context")
+async def clear_user_context(request: Request):
+    """Очищает контекст пользователя"""
+    try:
+        # Получаем session_id из cookies
+        session_id = request.cookies.get('session_id')
+        
+        if not session_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Требуется аутентификация"
+            )
+        
+        # Проверяем сессию
+        session_data = session_manager.get_session(session_id)
+        if not session_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Сессия истекла"
+            )
+        
+        # Получаем ID пользователя
+        user_info = session_data.get('user_info', {})
+        user_id = user_info.get('id')
+        
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ID пользователя не найден в сессии"
+            )
+        
+        # Очищаем контекст
+        success = chat_service.clear_user_context(user_id)
+        
+        if success:
+            return {
+                "success": True,
+                "message": "Контекст успешно очищен",
+                "user_id": user_id
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Ошибка очистки контекста"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Ошибка очистки контекста пользователя: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка очистки контекста: {str(e)}"
+        )
 
 # --- Администрирование ---
 

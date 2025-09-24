@@ -226,6 +226,11 @@ class LLMClient:
 Отвечай на русском языке кратко и по делу.
 """
         
+        # Добавляем дополнительный контекст пользователя, если он есть
+        user_additional_context = context.get('user_additional_context', '') if context else ''
+        if user_additional_context:
+            system_prompt += f"\n\nДополнительный контекст пользователя:\n{user_additional_context}"
+        
         # Добавляем контекст из чата, если он есть
         if context:
             context_info = self._format_context_for_prompt(context)

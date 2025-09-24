@@ -248,6 +248,9 @@
                     <a href="/admin" target="_blank" class="btn btn-outline-warning btn-sm">
                         <i class="fas fa-cogs"></i> Админ
                     </a>
+                    <button class="btn btn-outline-success btn-sm" onclick="showUserContextModal()">
+                        <i class="fas fa-brain"></i> Контекст
+                    </button>
                     <button class="btn btn-outline-danger btn-sm" onclick="logout()">
                         <i class="fas fa-sign-out-alt"></i> Выход
                     </button>
@@ -845,6 +848,274 @@
         // Автоматическая проверка статуса каждые 30 секунд
         setInterval(checkServicesStatus, 30000);
     </script>
+
+    <!-- Модальное окно для управления контекстом пользователя -->
+    <div class="modal fade" id="userContextModal" tabindex="-1" aria-labelledby="userContextModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="userContextModalLabel">
+                        <i class="fas fa-brain"></i> Управление контекстом пользователя
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="contextTextarea" class="form-label">
+                            <i class="fas fa-info-circle"></i> Дополнительный контекст для AI ассистента
+                        </label>
+                        <textarea class="form-control" id="contextTextarea" rows="8" 
+                                  placeholder="Опишите здесь информацию о себе, своих предпочтениях, рабочем контексте и т.д. Это поможет AI ассистенту лучше понимать ваши потребности и давать более персонализированные ответы.
+
+Примеры:
+- Ваша профессия и специализация
+- Предпочитаемый стиль общения
+- Технические навыки и интересы
+- Рабочий контекст и проекты
+- Любые другие важные детали"></textarea>
+                        <div class="form-text">
+                            <i class="fas fa-lightbulb"></i> 
+                            Этот контекст будет автоматически передаваться AI ассистенту при каждом сообщении, 
+                            помогая ему лучше понимать ваши потребности.
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <small class="text-muted">
+                                    <i class="fas fa-chart-bar"></i> 
+                                    Символов: <span id="contextCharCount">0</span>
+                                </small>
+                            </div>
+                            <div class="col-md-6 text-end">
+                                <small class="text-muted">
+                                    <i class="fas fa-clock"></i> 
+                                    Последнее обновление: <span id="contextLastUpdate">Неизвестно</span>
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Отмена
+                    </button>
+                    <button type="button" class="btn btn-warning" onclick="clearUserContext()">
+                        <i class="fas fa-trash"></i> Очистить
+                    </button>
+                    <button type="button" class="btn btn-primary" onclick="saveUserContext()">
+                        <i class="fas fa-save"></i> Сохранить
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript для управления контекстом пользователя -->
+    <script>
+        // Функции для работы с контекстом пользователя
+        let userContextData = {
+            context: '',
+            lastUpdate: null
+        };
+
+        // Показать модальное окно контекста
+        function showUserContextModal() {
+            const modal = new bootstrap.Modal(document.getElementById('userContextModal'));
+            loadUserContext();
+            modal.show();
+        }
+
+        // Загрузить контекст пользователя
+        async function loadUserContext() {
+            try {
+                showLoadingState();
+                
+                const response = await fetch('/api/user/context');
+                const data = await response.json();
+                
+                if (data.success) {
+                    userContextData.context = data.context || '';
+                    userContextData.lastUpdate = new Date().toLocaleString();
+                    
+                    document.getElementById('contextTextarea').value = userContextData.context;
+                    updateCharCount();
+                    updateLastUpdate();
+                    
+                    showSuccessState('Контекст загружен успешно');
+                } else {
+                    showErrorState('Ошибка загрузки контекста');
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки контекста:', error);
+                showErrorState('Ошибка соединения при загрузке контекста');
+            }
+        }
+
+        // Сохранить контекст пользователя
+        async function saveUserContext() {
+            const context = document.getElementById('contextTextarea').value.trim();
+            
+            if (!context) {
+                showErrorState('Контекст не может быть пустым');
+                return;
+            }
+
+            try {
+                showLoadingState();
+                
+                const response = await fetch('/api/user/context', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ context: context })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    userContextData.context = context;
+                    userContextData.lastUpdate = new Date().toLocaleString();
+                    
+                    updateCharCount();
+                    updateLastUpdate();
+                    
+                    showSuccessState('Контекст сохранен успешно');
+                    
+                    // Закрываем модальное окно через 1 секунду
+                    setTimeout(() => {
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('userContextModal'));
+                        modal.hide();
+                    }, 1000);
+                } else {
+                    showErrorState('Ошибка сохранения контекста');
+                }
+            } catch (error) {
+                console.error('Ошибка сохранения контекста:', error);
+                showErrorState('Ошибка соединения при сохранении контекста');
+            }
+        }
+
+        // Очистить контекст пользователя
+        async function clearUserContext() {
+            if (!confirm('Вы уверены, что хотите очистить контекст? Это действие нельзя отменить.')) {
+                return;
+            }
+
+            try {
+                showLoadingState();
+                
+                const response = await fetch('/api/user/context', {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    userContextData.context = '';
+                    userContextData.lastUpdate = new Date().toLocaleString();
+                    
+                    document.getElementById('contextTextarea').value = '';
+                    updateCharCount();
+                    updateLastUpdate();
+                    
+                    showSuccessState('Контекст очищен успешно');
+                } else {
+                    showErrorState('Ошибка очистки контекста');
+                }
+            } catch (error) {
+                console.error('Ошибка очистки контекста:', error);
+                showErrorState('Ошибка соединения при очистке контекста');
+            }
+        }
+
+        // Обновить счетчик символов
+        function updateCharCount() {
+            const textarea = document.getElementById('contextTextarea');
+            const charCount = textarea.value.length;
+            document.getElementById('contextCharCount').textContent = charCount;
+            
+            // Изменяем цвет в зависимости от количества символов
+            const charCountElement = document.getElementById('contextCharCount');
+            if (charCount > 2000) {
+                charCountElement.className = 'text-danger';
+            } else if (charCount > 1000) {
+                charCountElement.className = 'text-warning';
+            } else {
+                charCountElement.className = 'text-success';
+            }
+        }
+
+        // Обновить информацию о последнем обновлении
+        function updateLastUpdate() {
+            document.getElementById('contextLastUpdate').textContent = 
+                userContextData.lastUpdate || 'Неизвестно';
+        }
+
+        // Показать состояние загрузки
+        function showLoadingState() {
+            const modalBody = document.querySelector('#userContextModal .modal-body');
+            modalBody.style.opacity = '0.6';
+            modalBody.style.pointerEvents = 'none';
+        }
+
+        // Показать состояние успеха
+        function showSuccessState(message) {
+            const modalBody = document.querySelector('#userContextModal .modal-body');
+            modalBody.style.opacity = '1';
+            modalBody.style.pointerEvents = 'auto';
+            
+            // Показываем уведомление
+            showNotification(message, 'success');
+        }
+
+        // Показать состояние ошибки
+        function showErrorState(message) {
+            const modalBody = document.querySelector('#userContextModal .modal-body');
+            modalBody.style.opacity = '1';
+            modalBody.style.pointerEvents = 'auto';
+            
+            // Показываем уведомление
+            showNotification(message, 'error');
+        }
+
+        // Показать уведомление
+        function showNotification(message, type) {
+            // Создаем элемент уведомления
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type === 'success' ? 'success' : 'danger'} alert-dismissible fade show position-fixed`;
+            notification.style.top = '20px';
+            notification.style.right = '20px';
+            notification.style.zIndex = '9999';
+            notification.style.minWidth = '300px';
+            
+            notification.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check' : 'times'}"></i> ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Автоматически удаляем уведомление через 3 секунды
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 3000);
+        }
+
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            // Добавляем обработчик изменения текста для счетчика символов
+            const textarea = document.getElementById('contextTextarea');
+            if (textarea) {
+                textarea.addEventListener('input', updateCharCount);
+            }
+        });
+    </script>
+
         </div>
     </div>
 </body>

@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     groups TEXT[],
     is_admin BOOLEAN DEFAULT FALSE,
     is_ldap_user BOOLEAN DEFAULT FALSE,
+    user_context TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMP
 );

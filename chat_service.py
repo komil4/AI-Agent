@@ -259,12 +259,17 @@ class ChatService:
             
             return result
     
-    def get_session_history(self, session_id: int) -> List[Dict[str, Any]]:
+    def get_session_history(self, session_id: int, limit: int = None) -> List[Dict[str, Any]]:
         """Получает полную историю сессии с инструментами"""
         with get_db() as session:
-            messages = session.query(Message).filter(
+            query = session.query(Message).filter(
                 Message.session_id == session_id
-            ).order_by(Message.created_at).all()
+            ).order_by(Message.created_at)
+            
+            if limit:
+                query = query.limit(limit)
+            
+            messages = query.all()
             
             history = []
             for msg in messages:
@@ -379,6 +384,80 @@ class ChatService:
                 # Если хеш неподдерживаемый, считаем пароль неверным
                 return False
             raise
+    
+    # --- Управление контекстом пользователя ---
+    
+    def save_user_context(self, user_id: int, context: str) -> bool:
+        """Сохраняет дополнительный контекст пользователя"""
+        try:
+            with get_db() as session:
+                user = session.query(User).filter(User.id == user_id).first()
+                if user:
+                    user.user_context = context
+                    session.commit()
+                    logger.info(f"✅ Контекст пользователя сохранен: {user.username} (ID: {user_id})")
+                    return True
+                else:
+                    logger.error(f"❌ Пользователь не найден: ID {user_id}")
+                    return False
+        except Exception as e:
+            logger.error(f"❌ Ошибка сохранения контекста пользователя {user_id}: {e}")
+            return False
+    
+    def get_user_context(self, user_id: int) -> Optional[str]:
+        """Получает дополнительный контекст пользователя"""
+        try:
+            with get_db() as session:
+                user = session.query(User).filter(User.id == user_id).first()
+                if user:
+                    context = user.user_context
+                    logger.debug(f"📋 Контекст пользователя получен: {user.username} (ID: {user_id})")
+                    return context
+                else:
+                    logger.error(f"❌ Пользователь не найден: ID {user_id}")
+                    return None
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения контекста пользователя {user_id}: {e}")
+            return None
+    
+    def update_user_context(self, user_id: int, new_context: str) -> bool:
+        """Обновляет контекст пользователя (добавляет к существующему)"""
+        try:
+            with get_db() as session:
+                user = session.query(User).filter(User.id == user_id).first()
+                if user:
+                    # Если контекст уже существует, добавляем к нему
+                    if user.user_context:
+                        user.user_context = f"{user.user_context}\n\n{new_context}"
+                    else:
+                        user.user_context = new_context
+                    
+                    session.commit()
+                    logger.info(f"✅ Контекст пользователя обновлен: {user.username} (ID: {user_id})")
+                    return True
+                else:
+                    logger.error(f"❌ Пользователь не найден: ID {user_id}")
+                    return False
+        except Exception as e:
+            logger.error(f"❌ Ошибка обновления контекста пользователя {user_id}: {e}")
+            return False
+    
+    def clear_user_context(self, user_id: int) -> bool:
+        """Очищает контекст пользователя"""
+        try:
+            with get_db() as session:
+                user = session.query(User).filter(User.id == user_id).first()
+                if user:
+                    user.user_context = None
+                    session.commit()
+                    logger.info(f"✅ Контекст пользователя очищен: {user.username} (ID: {user_id})")
+                    return True
+                else:
+                    logger.error(f"❌ Пользователь не найден: ID {user_id}")
+                    return False
+        except Exception as e:
+            logger.error(f"❌ Ошибка очистки контекста пользователя {user_id}: {e}")
+            return False
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
