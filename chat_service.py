@@ -114,6 +114,10 @@ class ChatService:
                         # Обновляем время последнего входа
                         user.last_login = datetime.utcnow()
                         session.commit()
+                        
+                        # Отсоединяем объект от сессии
+                        session.expunge(user)
+                        
                         logger.info(f"✅ Локальная аутентификация успешна: {username}")
                         return user
                 except Exception as e:
@@ -215,11 +219,8 @@ class ChatService:
                 chat_session.updated_at = datetime.utcnow()
                 session.commit()
             
-            # Отсоединяем объект от сессии и возвращаем данные
-            session.expunge(message)
-            
-            logger.info(f"✅ Добавлено сообщение в сессию {session_id}")
-            return {
+            # Сохраняем данные сообщения до отсоединения от сессии
+            message_data = {
                 'id': message.id,
                 'session_id': message.session_id,
                 'user_id': message.user_id,
@@ -228,6 +229,12 @@ class ChatService:
                 'message_metadata': message.message_metadata,
                 'created_at': message.created_at
             }
+            
+            # Отсоединяем объект от сессии
+            session.expunge(message)
+            
+            logger.info(f"✅ Добавлено сообщение в сессию {session_id}")
+            return message_data
     
     def get_session_messages(self, session_id: int, limit: int = 50) -> List[Dict[str, Any]]:
         """Получает сообщения сессии"""
