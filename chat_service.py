@@ -25,39 +25,19 @@ logger = logging.getLogger(__name__)
 class ChatService:
     """Сервис для работы с историей чата"""
     
+    # ============================================================================
+    # ИНИЦИАЛИЗАЦИЯ МОДУЛЯ
+    # ============================================================================
+    
     def __init__(self):
+        """Инициализация сервиса чата"""
         pass
     
-    def hash_password(self, password: str) -> str:
-        """Хеширует пароль"""
-        if not PASSWORD_AVAILABLE:
-            raise RuntimeError("passlib не установлен")
-        return pwd_context.hash(password)
+    # ============================================================================
+    # ПРОГРАММНЫЙ ИНТЕРФЕЙС (API)
+    # ============================================================================
     
-    def verify_password(self, plain_password: str, hashed_password: str) -> bool:
-        """Проверяет пароль"""
-        if not PASSWORD_AVAILABLE:
-            raise RuntimeError("passlib не установлен")
-        return pwd_context.verify(plain_password, hashed_password)
-    
-    def authenticate_local_user(self, username: str, password: str) -> Optional[User]:
-        """Аутентификация локального пользователя по паролю"""
-        with get_db() as session:
-            user = session.query(User).filter(
-                User.username == username,
-                User.is_ldap_user == False,
-                User.password_hash.isnot(None)
-            ).first()
-            
-            if user and self.verify_password(password, user.password_hash):
-                # Обновляем время последнего входа
-                user.last_login = datetime.utcnow()
-                session.commit()
-                logger.info(f"✅ Локальная аутентификация успешна: {username}")
-                return user
-            
-            logger.warning(f"❌ Неверные учетные данные для локального пользователя: {username}")
-            return None
+    # --- Управление пользователями ---
     
     def get_or_create_user(self, username: str, user_info: Dict[str, Any]) -> User:
         """Получает или создает пользователя"""
@@ -119,6 +99,27 @@ class ChatService:
             session.expunge(user)
             return user
     
+    def authenticate_local_user(self, username: str, password: str) -> Optional[User]:
+        """Аутентификация локального пользователя по паролю"""
+        with get_db() as session:
+            user = session.query(User).filter(
+                User.username == username,
+                User.is_ldap_user == False,
+                User.password_hash.isnot(None)
+            ).first()
+            
+            if user and self.verify_password(password, user.password_hash):
+                # Обновляем время последнего входа
+                user.last_login = datetime.utcnow()
+                session.commit()
+                logger.info(f"✅ Локальная аутентификация успешна: {username}")
+                return user
+            
+            logger.warning(f"❌ Неверные учетные данные для локального пользователя: {username}")
+            return None
+    
+    # --- Управление сессиями чата ---
+    
     def create_chat_session(self, user_id: int, session_name: str = None) -> ChatSession:
         """Создает новую сессию чата"""
         with get_db() as session:
@@ -174,6 +175,18 @@ class ChatService:
                 })
             
             return result
+    
+    def close_session(self, session_id: int):
+        """Закрывает сессию чата"""
+        with get_db() as session:
+            chat_session = session.query(ChatSession).filter(ChatSession.id == session_id).first()
+            if chat_session:
+                chat_session.is_active = False
+                chat_session.updated_at = datetime.utcnow()
+                session.commit()
+                logger.info(f"✅ Сессия {session_id} закрыта")
+    
+    # --- Управление сообщениями ---
     
     def add_message(self, session_id: int, user_id: int, message_type: str, 
                    content: str, metadata: Dict[str, Any] = None) -> Dict[str, Any]:
@@ -233,38 +246,6 @@ class ChatService:
             
             return result
     
-    def add_tool_usage(self, message_id: int, tool_name: str, server_name: str,
-                      arguments: Dict[str, Any] = None, result: Dict[str, Any] = None,
-                      execution_time_ms: int = None) -> Dict[str, Any]:
-        """Добавляет информацию об использовании инструмента"""
-        with get_db() as session:
-            tool_usage = ToolUsage(
-                message_id=message_id,
-                tool_name=tool_name,
-                server_name=server_name,
-                arguments=arguments or {},
-                result=result or {},
-                execution_time_ms=execution_time_ms
-            )
-            session.add(tool_usage)
-            session.commit()
-            session.refresh(tool_usage)
-            
-            # Отсоединяем объект от сессии и возвращаем данные
-            session.expunge(tool_usage)
-            
-            logger.info(f"✅ Добавлено использование инструмента: {tool_name}")
-            return {
-                'id': tool_usage.id,
-                'message_id': tool_usage.message_id,
-                'tool_name': tool_usage.tool_name,
-                'server_name': tool_usage.server_name,
-                'arguments': tool_usage.arguments,
-                'result': tool_usage.result,
-                'execution_time_ms': tool_usage.execution_time_ms,
-                'created_at': tool_usage.created_at
-            }
-    
     def get_session_history(self, session_id: int) -> List[Dict[str, Any]]:
         """Получает полную историю сессии с инструментами"""
         with get_db() as session:
@@ -303,15 +284,41 @@ class ChatService:
             
             return history
     
-    def close_session(self, session_id: int):
-        """Закрывает сессию чата"""
+    # --- Управление инструментами ---
+    
+    def add_tool_usage(self, message_id: int, tool_name: str, server_name: str,
+                      arguments: Dict[str, Any] = None, result: Dict[str, Any] = None,
+                      execution_time_ms: int = None) -> Dict[str, Any]:
+        """Добавляет информацию об использовании инструмента"""
         with get_db() as session:
-            chat_session = session.query(ChatSession).filter(ChatSession.id == session_id).first()
-            if chat_session:
-                chat_session.is_active = False
-                chat_session.updated_at = datetime.utcnow()
-                session.commit()
-                logger.info(f"✅ Сессия {session_id} закрыта")
+            tool_usage = ToolUsage(
+                message_id=message_id,
+                tool_name=tool_name,
+                server_name=server_name,
+                arguments=arguments or {},
+                result=result or {},
+                execution_time_ms=execution_time_ms
+            )
+            session.add(tool_usage)
+            session.commit()
+            session.refresh(tool_usage)
+            
+            # Отсоединяем объект от сессии и возвращаем данные
+            session.expunge(tool_usage)
+            
+            logger.info(f"✅ Добавлено использование инструмента: {tool_name}")
+            return {
+                'id': tool_usage.id,
+                'message_id': tool_usage.message_id,
+                'tool_name': tool_usage.tool_name,
+                'server_name': tool_usage.server_name,
+                'arguments': tool_usage.arguments,
+                'result': tool_usage.result,
+                'execution_time_ms': tool_usage.execution_time_ms,
+                'created_at': tool_usage.created_at
+            }
+    
+    # --- Статистика ---
     
     def get_user_stats(self, user_id: int) -> Dict[str, Any]:
         """Получает статистику пользователя"""
@@ -335,6 +342,26 @@ class ChatService:
                 'tools_count': tools_count,
                 'last_activity': last_activity.isoformat() if last_activity else None
             }
+    
+    # ============================================================================
+    # СЛУЖЕБНЫЕ ФУНКЦИИ
+    # ============================================================================
+    
+    def hash_password(self, password: str) -> str:
+        """Хеширует пароль"""
+        if not PASSWORD_AVAILABLE:
+            raise RuntimeError("passlib не установлен")
+        return pwd_context.hash(password)
+    
+    def verify_password(self, plain_password: str, hashed_password: str) -> bool:
+        """Проверяет пароль"""
+        if not PASSWORD_AVAILABLE:
+            raise RuntimeError("passlib не установлен")
+        return pwd_context.verify(plain_password, hashed_password)
+
+# ============================================================================
+# ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+# ============================================================================
 
 # Глобальный экземпляр сервиса
 chat_service = ChatService()

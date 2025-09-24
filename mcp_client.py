@@ -37,27 +37,6 @@ class MCPClient:
         """Загружает конфигурацию MCP серверов"""
         self.mcp_config = self.config_manager.get_service_config('mcp_servers')
     
-    async def _connect_onec_server(self):
-        """Подключается к 1С MCP серверу"""
-        if not MCP_AVAILABLE:
-            logger.warning("⚠️ MCP библиотека недоступна, пропускаем подключение к 1С MCP серверу")
-            return
-            
-        try:
-            # Для 1С используем встроенный сервер
-            builtin_servers = self._get_builtin_servers()
-            onec_server = builtin_servers.get('onec')
-            if onec_server:
-                self.sessions['onec'] = onec_server
-                # Используем предопределенные инструменты
-                self.available_tools['onec'] = self.server_tools['onec']
-                logger.info("✅ 1С MCP сервер подключен (встроенный)")
-            else:
-                logger.warning("⚠️ 1С MCP сервер не найден")
-                    
-        except Exception as e:
-            logger.error(f"❌ Ошибка подключения к 1С MCP серверу: {e}")
-    
     def _define_tools(self):
         """Определяет предопределенные инструменты для каждого сервера"""
         # Получаем информацию о включенных сервисах
@@ -82,37 +61,36 @@ class MCPClient:
         self.server_tools = all_tools
     
     def _get_builtin_servers(self) -> Dict[str, Any]:
-        """Получает экземпляры встроенных MCP серверов"""
+        """Получает экземпляры встроенных MCP серверов через автоматическое обнаружение"""
         servers = {}
         
-        # Список доступных серверов
-        server_modules = {
-            'jira': 'mcp_servers.jira_server',
-            'gitlab': 'mcp_servers.gitlab_server',
-            'atlassian': 'mcp_servers.atlassian_server',
-            'ldap': 'mcp_servers.ldap_server',
-            'onec': 'mcp_servers.onec_server',
-            'file': 'mcp_servers.file_server'
-        }
-        
-        for server_name, module_name in server_modules.items():
-            try:
-                # Динамически импортируем модуль
-                module = __import__(module_name, fromlist=[f'{server_name.title()}MCPServer'])
-                server_class = getattr(module, f'{server_name.title()}MCPServer')
-                
-                # Создаем экземпляр сервера
-                server_instance = server_class()
-                
-                # Проверяем, включен ли сервер
-                if server_instance.is_enabled():
-                    servers[server_name] = server_instance
-                    logger.info(f"✅ Сервер {server_name} загружен и включен")
-                else:
-                    logger.info(f"ℹ️ Сервер {server_name} отключен")
+        try:
+            # Используем автоматическое обнаружение серверов
+            from mcp_servers import get_discovered_servers, create_server_instance
+            
+            discovered_servers = get_discovered_servers()
+            logger.info(f"🔍 Обнаружено серверов: {len(discovered_servers)}")
+            
+            for server_name in discovered_servers.keys():
+                try:
+                    # Создаем экземпляр сервера
+                    server_instance = create_server_instance(server_name)
                     
-            except Exception as e:
-                logger.warning(f"⚠️ Не удалось загрузить сервер {server_name}: {e}")
+                    if server_instance:
+                        # Проверяем, включен ли сервер
+                        if server_instance.is_enabled():
+                            servers[server_name] = server_instance
+                            logger.info(f"✅ Сервер {server_name} загружен и включен")
+                        else:
+                            logger.info(f"ℹ️ Сервер {server_name} отключен")
+                    else:
+                        logger.warning(f"⚠️ Не удалось создать экземпляр сервера {server_name}")
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ Ошибка загрузки сервера {server_name}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"❌ Ошибка автоматического обнаружения серверов: {e}")
         
         return servers
     
@@ -123,110 +101,75 @@ class MCPClient:
                 logger.warning("⚠️ MCP библиотека недоступна, используем встроенные серверы")
                 return
             
-            # Jira MCP сервер
-            if self.mcp_config.get('jira', {}).get('enabled', False):
-                await self._connect_jira_server()
+            # Получаем список включенных серверов из конфигурации
+            enabled_servers = self._get_enabled_servers_from_config()
             
-            # GitLab MCP сервер  
-            if self.mcp_config.get('gitlab', {}).get('enabled', False):
-                await self._connect_gitlab_server()
-            
-            # Confluence MCP сервер
-            if self.mcp_config.get('confluence', {}).get('enabled', False):
-                await self._connect_confluence_server()
-            
-            # 1С MCP сервер
-            if self.mcp_config.get('onec', {}).get('enabled', False):
-                await self._connect_onec_server()
+            # Подключаемся только к включенным серверам
+            for server_name in enabled_servers:
+                try:
+                    await self._connect_external_server(server_name)
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось подключиться к внешнему серверу {server_name}: {e}")
                 
-            logger.info(f"✅ Инициализировано {len(self.sessions)} MCP серверов")
+            logger.info(f"✅ Инициализировано {len(self.sessions)} внешних MCP серверов")
             
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации MCP серверов: {e}")
     
-    async def _connect_jira_server(self):
-        """Подключается к Jira MCP серверу"""
-        if not MCP_AVAILABLE:
-            logger.warning("⚠️ MCP библиотека недоступна, пропускаем подключение к Jira MCP серверу")
-            return
-            
+    def _get_enabled_servers_from_config(self) -> List[str]:
+        """Получает список включенных серверов из конфигурации"""
+        enabled_servers = []
+        
+        # Получаем все секции конфигурации
+        for section_name, section_config in self.mcp_config.items():
+            if isinstance(section_config, dict) and section_config.get('enabled', False):
+                enabled_servers.append(section_name)
+        
+        logger.info(f"🔧 Включенные серверы из конфигурации: {enabled_servers}")
+        return enabled_servers
+    
+    async def _connect_external_server(self, server_name: str):
+        """Подключается к внешнему MCP серверу по имени"""
         try:
-            jira_config = self.mcp_config.get('jira', {})
+            server_config = self.mcp_config.get(server_name, {})
+            
+            # Проверяем, что сервер включен
+            if not server_config.get('enabled', False):
+                logger.info(f"ℹ️ Сервер {server_name} отключен в конфигурации")
+                return
+            
+            # Получаем параметры подключения
+            command = server_config.get('command')
+            args = server_config.get('args', [])
+            
+            if not command:
+                logger.warning(f"⚠️ Не указана команда для сервера {server_name}")
+                return
+            
+            # Создаем параметры сервера
             server_params = StdioServerParameters(
-                command="npx",
-                args=["-y", "@modelcontextprotocol/server-jira"],
-                env={
-                    "JIRA_URL": jira_config.get('url', ''),
-                    "JIRA_USERNAME": jira_config.get('username', ''),
-                    "JIRA_API_TOKEN": jira_config.get('api_token', '')
-                }
+                command=command,
+                args=args
             )
             
+            # Подключаемся к серверу
             async with stdio_client(server_params) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-                    self.sessions['jira'] = session
-                    # Используем предопределенные инструменты вместо загрузки с сервера
-                    self.available_tools['jira'] = self.server_tools['jira']
+                    
+                    # Получаем список инструментов
+                    tools_result = await session.list_tools()
+                    tools = tools_result.tools
+                    
+                    # Сохраняем сессию и инструменты
+                    self.sessions[server_name] = session
+                    self.available_tools[server_name] = tools
+                    
+                    logger.info(f"✅ Подключен к внешнему серверу {server_name} с {len(tools)} инструментами")
                     
         except Exception as e:
-            logger.error(f"❌ Ошибка подключения к Jira MCP серверу: {e}")
-    
-    async def _connect_gitlab_server(self):
-        """Подключается к GitLab MCP серверу"""
-        if not MCP_AVAILABLE:
-            logger.warning("⚠️ MCP библиотека недоступна, пропускаем подключение к GitLab MCP серверу")
-            return
-            
-        try:
-            gitlab_config = self.mcp_config.get('gitlab', {})
-            server_params = StdioServerParameters(
-                command="npx",
-                args=["-y", "@modelcontextprotocol/server-gitlab"],
-                env={
-                    "GITLAB_URL": gitlab_config.get('url', ''),
-                    "GITLAB_TOKEN": gitlab_config.get('token', '')
-                }
-            )
-            
-            async with stdio_client(server_params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    self.sessions['gitlab'] = session
-                    # Используем предопределенные инструменты вместо загрузки с сервера
-                    self.available_tools['gitlab'] = self.server_tools['gitlab']
-                    
-        except Exception as e:
-            logger.error(f"❌ Ошибка подключения к GitLab MCP серверу: {e}")
-    
-    async def _connect_confluence_server(self):
-        """Подключается к Confluence MCP серверу"""
-        if not MCP_AVAILABLE:
-            logger.warning("⚠️ MCP библиотека недоступна, пропускаем подключение к Confluence MCP серверу")
-            return
-            
-        try:
-            confluence_config = self.mcp_config.get('confluence', {})
-            server_params = StdioServerParameters(
-                command="npx",
-                args=["-y", "@modelcontextprotocol/server-confluence"],
-                env={
-                    "CONFLUENCE_URL": confluence_config.get('url', ''),
-                    "CONFLUENCE_USERNAME": confluence_config.get('username', ''),
-                    "CONFLUENCE_API_TOKEN": confluence_config.get('api_token', '')
-                }
-            )
-            
-            async with stdio_client(server_params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    self.sessions['confluence'] = session
-                    # Используем предопределенные инструменты вместо загрузки с сервера
-                    self.available_tools['confluence'] = self.server_tools['confluence']
-                    
-        except Exception as e:
-            logger.error(f"❌ Ошибка подключения к Confluence MCP серверу: {e}")
-    
+            logger.error(f"❌ Ошибка подключения к серверу {server_name}: {e}")
+            raise
     
     async def get_all_tools(self) -> List[Dict]:
         """Возвращает все доступные инструменты для отправки в LLM"""
@@ -276,6 +219,49 @@ class MCPClient:
     async def process_message_with_llm(self, message: str, user_context: dict = None) -> str:
         """Обрабатывает сообщение с помощью LLM и всех доступных инструментов"""
         try:
+            # Проверяем, нужно ли использовать ReAct агента
+            use_react = user_context.get('use_react', False) if user_context else False
+            
+            if use_react:
+                return await self._process_with_react(message, user_context)
+            else:
+                return await self._process_with_simple_llm(message, user_context)
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка обработки сообщения: {e}")
+            return f"Извините, произошла ошибка при обработке вашего запроса: {str(e)}"
+    
+    async def _process_with_react(self, message: str, user_context: dict = None) -> str:
+        """Обрабатывает сообщение с использованием ReAct агента"""
+        try:
+            from react_agent import get_react_agent
+            from llm_client import LLMClient
+            
+            # Получаем ReAct агента
+            llm_client = LLMClient()
+            react_agent = get_react_agent(self, llm_client)
+            
+            if not react_agent or not react_agent.is_available():
+                logger.warning("⚠️ ReAct агент недоступен, используем простую обработку")
+                return await self._process_with_simple_llm(message, user_context)
+            
+            # Обрабатываем запрос через ReAct
+            result = await react_agent.process_query(message, user_context)
+            
+            if result["success"]:
+                logger.info(f"✅ ReAct агент выполнил {result['iterations']} итераций, использовал {result['tools_used']} инструментов")
+                return result["result"]
+            else:
+                logger.error(f"❌ Ошибка ReAct агента: {result['error']}")
+                return f"Ошибка ReAct агента: {result['error']}"
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка ReAct обработки: {e}")
+            return await self._process_with_simple_llm(message, user_context)
+    
+    async def _process_with_simple_llm(self, message: str, user_context: dict = None) -> str:
+        """Обрабатывает сообщение с помощью простого LLM (старый способ)"""
+        try:
             # Получаем все доступные инструменты
             all_tools = await self.get_all_tools()
             
@@ -287,11 +273,12 @@ class MCPClient:
             from llm_client import LLMClient
             llm_client = LLMClient()
             
-            # Формируем контекст с инструментами
+            # Формируем контекст с инструментами и историей чата
             tools_context = {
                 "available_tools": all_tools,
                 "user_message": message,
-                "user_context": user_context or {}
+                "user_context": user_context or {},
+                "chat_history": user_context.get('chat_history', []) if user_context else []
             }
             
             # Отправляем в LLM для обработки
@@ -299,7 +286,7 @@ class MCPClient:
             return response
                 
         except Exception as e:
-            logger.error(f"❌ Ошибка обработки сообщения: {e}")
+            logger.error(f"❌ Ошибка простой LLM обработки: {e}")
             return f"Извините, произошла ошибка при обработке вашего запроса: {str(e)}"
     
     async def _handle_with_builtin_servers(self, message: str, user_context: dict) -> str:
@@ -312,11 +299,12 @@ class MCPClient:
             from llm_client import LLMClient
             llm_client = LLMClient()
             
-            # Формируем контекст с инструментами
+            # Формируем контекст с инструментами и историей чата
             tools_context = {
                 "available_tools": all_tools,
                 "user_message": message,
-                "user_context": user_context or {}
+                "user_context": user_context or {},
+                "chat_history": user_context.get('chat_history', []) if user_context else []
             }
             
             # Отправляем в LLM для обработки

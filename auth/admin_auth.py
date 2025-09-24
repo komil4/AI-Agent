@@ -1,3 +1,12 @@
+#!/usr/bin/env python3
+"""
+Аутентификация администратора
+"""
+
+# ============================================================================
+# ИНИЦИАЛИЗАЦИЯ МОДУЛЯ
+# ============================================================================
+
 import os
 import hashlib
 import json
@@ -8,8 +17,15 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# ПРОГРАММНЫЙ ИНТЕРФЕЙС (API)
+# ============================================================================
+
 class AdminAuth:
+    """Аутентификатор администратора"""
+    
     def __init__(self):
+        """Инициализация аутентификатора администратора"""
         self.admin_file = "admin_config.json"
         self.default_admin = {
             "username": "admin",
@@ -19,6 +35,72 @@ class AdminAuth:
         }
         self._ensure_admin_config()
     
+    def authenticate_admin(self, username: str, password: str) -> bool:
+        """Аутентификация админа"""
+        config = self._load_admin_config()
+        
+        if config.get("username") == username:
+            password_hash = self._hash_password(password)
+            if config.get("password_hash") == password_hash:
+                # Обновляем время последнего входа
+                config["last_login"] = datetime.utcnow().isoformat()
+                self._save_admin_config(config)
+                logger.info(f"✅ Админ аутентифицирован: {username}")
+                return True
+        
+        logger.warning(f"❌ Неверные учетные данные админа: {username}")
+        return False
+    
+    def change_admin_password(self, username: str, old_password: str, new_password: str) -> bool:
+        """Изменение пароля админа"""
+        config = self._load_admin_config()
+        
+        if config.get("username") == username:
+            old_password_hash = self._hash_password(old_password)
+            if config.get("password_hash") == old_password_hash:
+                # Обновляем пароль
+                config["password_hash"] = self._hash_password(new_password)
+                config["last_password_change"] = datetime.utcnow().isoformat()
+                self._save_admin_config(config)
+                logger.info(f"✅ Пароль админа изменен: {username}")
+                return True
+        
+        logger.warning(f"❌ Неверный старый пароль для админа: {username}")
+        return False
+    
+    def get_admin_info(self) -> Dict[str, Any]:
+        """Получает информацию об админе"""
+        config = self._load_admin_config()
+        return {
+            "username": config.get("username"),
+            "created_at": config.get("created_at"),
+            "last_login": config.get("last_login"),
+            "last_password_change": config.get("last_password_change")
+        }
+    
+    def create_admin(self, username: str, password: str) -> bool:
+        """Создает нового админа"""
+        config = self._load_admin_config()
+        
+        if config.get("username") == username:
+            logger.warning(f"❌ Админ уже существует: {username}")
+            return False
+        
+        new_admin = {
+            "username": username,
+            "password_hash": self._hash_password(password),
+            "created_at": datetime.utcnow().isoformat(),
+            "last_login": None
+        }
+        
+        self._save_admin_config(new_admin)
+        logger.info(f"✅ Создан новый админ: {username}")
+        return True
+
+# ============================================================================
+# СЛУЖЕБНЫЕ ФУНКЦИИ
+# ============================================================================
+
     def _ensure_admin_config(self):
         """Создает файл конфигурации админа если его нет"""
         if not os.path.exists(self.admin_file):
@@ -44,49 +126,10 @@ class AdminAuth:
                 json.dump(config, f, indent=2, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Ошибка сохранения конфигурации админа: {e}")
-    
-    def authenticate_admin(self, username: str, password: str) -> bool:
-        """Аутентификация админа"""
-        config = self._load_admin_config()
-        
-        if config.get("username") != username:
-            logger.warning(f"Неверное имя пользователя админа: {username}")
-            return False
-        
-        password_hash = self._hash_password(password)
-        if config.get("password_hash") != password_hash:
-            logger.warning(f"Неверный пароль админа для пользователя: {username}")
-            return False
-        
-        # Обновляем время последнего входа
-        config["last_login"] = datetime.utcnow().isoformat()
-        self._save_admin_config(config)
-        
-        return True
-    
-    def change_admin_password(self, old_password: str, new_password: str) -> bool:
-        """Смена пароля админа"""
-        config = self._load_admin_config()
-        
-        # Проверяем старый пароль
-        old_password_hash = self._hash_password(old_password)
-        if config.get("password_hash") != old_password_hash:
-            logger.warning("Неверный старый пароль админа")
-            return False
-        
-        # Устанавливаем новый пароль
-        config["password_hash"] = self._hash_password(new_password)
-        config["password_changed_at"] = datetime.utcnow().isoformat()
-        self._save_admin_config(config)
-        
-        return True
-    
-    def get_admin_info(self) -> Dict[str, Any]:
-        """Получает информацию об админе"""
-        config = self._load_admin_config()
-        return {
-            "username": config.get("username"),
-            "created_at": config.get("created_at"),
-            "last_login": config.get("last_login"),
-            "password_changed_at": config.get("password_changed_at")
-        }
+
+# ============================================================================
+# ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+# ============================================================================
+
+# Глобальный экземпляр аутентификатора администратора
+admin_auth = AdminAuth()

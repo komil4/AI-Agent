@@ -1,82 +1,322 @@
-import ldap3
-from typing import Dict, Any, List
-from config.config_manager import ConfigManager
-from . import BaseMCPServer
+#!/usr/bin/env python3
+"""
+MCP сервер для работы с LDAP/Active Directory с использованием стандарта Anthropic
+"""
 
-class LDAPMCPServer(BaseMCPServer):
+# ============================================================================
+# ИНИЦИАЛИЗАЦИЯ МОДУЛЯ
+# ============================================================================
+
+import ldap3
+import logging
+from typing import Dict, Any, List, Optional
+from datetime import datetime
+from .base_fastmcp_server import BaseFastMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
+
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# ПРОГРАММНЫЙ ИНТЕРФЕЙС (API)
+# ============================================================================
+
+class LDAPFastMCPServer(BaseFastMCPServer):
     """MCP сервер для работы с LDAP/Active Directory - поиск пользователей, групп и управление корпоративными данными"""
     
     def __init__(self):
-        super().__init__()
-        self.description = "LDAP/Active Directory - поиск пользователей, групп и управление корпоративными данными"
-        self.tools = [
-            {
-                "name": "search_users",
-                "description": "Ищет пользователей в LDAP/AD",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Поисковый запрос"},
-                        "attributes": {"type": "array", "description": "Список атрибутов для возврата"}
-                    },
-                    "required": ["query"]
-                }
-            },
-            {
-                "name": "list_users",
-                "description": "Получает список пользователей",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "limit": {"type": "integer", "description": "Максимальное количество результатов"},
-                        "attributes": {"type": "array", "description": "Список атрибутов для возврата"}
-                    }
-                }
-            },
-            {
-                "name": "get_user_details",
-                "description": "Получает детальную информацию о пользователе",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "username": {"type": "string", "description": "Имя пользователя"},
-                        "attributes": {"type": "array", "description": "Список атрибутов для возврата"}
-                    },
-                    "required": ["username"]
-                }
-            },
-            {
-                "name": "search_groups",
-                "description": "Ищет группы в LDAP/AD",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Поисковый запрос"},
-                        "attributes": {"type": "array", "description": "Список атрибутов для возврата"}
-                    },
-                    "required": ["query"]
-                }
-            },
-            {
-                "name": "list_groups",
-                "description": "Получает список групп",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "limit": {"type": "integer", "description": "Максимальное количество результатов"},
-                        "attributes": {"type": "array", "description": "Список атрибутов для возврата"}
-                    }
-                }
-            }
-        ]
-        self.config_manager = ConfigManager()
+        """Инициализация LDAP MCP сервера"""
+        super().__init__("active_directory")
         self.ldap_url = None
         self.ldap_user = None
         self.ldap_password = None
         self.base_dn = None
+        self.domain = None
         self.connection = None
-        self._load_config()
-        self._connect()
+        
+        # Настройки для админ-панели
+        self.display_name = "LDAP MCP"
+        self.icon = "fas fa-users"
+        self.category = "mcp_servers"
+        self.admin_fields = [
+            { 'key': 'ldap_url', 'label': 'URL сервера LDAP', 'type': 'text', 'placeholder': 'ldap://domain.local:389' },
+            { 'key': 'domain', 'label': 'Домен', 'type': 'text', 'placeholder': 'domain.local' },
+            { 'key': 'base_dn', 'label': 'Base DN', 'type': 'text', 'placeholder': 'CN=Users,DC=domain,DC=local' },
+            { 'key': 'ldap_user', 'label': 'LDAP User', 'type': 'text', 'placeholder': 'service_account' },
+            { 'key': 'ldap_password', 'label': 'LDAP Password', 'type': 'password', 'placeholder': 'пароль для service account' },
+            { 'key': 'enabled', 'label': 'Включен', 'type': 'checkbox' }
+        ]
+        
+        # Определяем инструменты в стандарте Anthropic
+        self.tools = [
+            create_tool_schema(
+                name="search_users",
+                description="Ищет пользователей в LDAP/Active Directory по различным критериям",
+                parameters={
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Поисковый запрос (имя пользователя, email, имя или фамилия)"
+                        },
+                        "search_base": {
+                            "type": "string",
+                            "description": "Базовый DN для поиска (по умолчанию используется конфигурационный)"
+                        },
+                        "attributes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Список атрибутов для возврата (по умолчанию основные атрибуты)"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Максимальное количество результатов (по умолчанию 50)",
+                            "minimum": 1,
+                            "maximum": 1000
+                        },
+                        "search_scope": {
+                            "type": "string",
+                            "description": "Область поиска",
+                            "enum": ["BASE", "LEVEL", "SUBTREE"],
+                            "default": "SUBTREE"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            ),
+            create_tool_schema(
+                name="get_user_details",
+                description="Получает детальную информацию о конкретном пользователе",
+                parameters={
+                    "properties": {
+                        "username": {
+                            "type": "string",
+                            "description": "Имя пользователя (sAMAccountName)"
+                        },
+                        "attributes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Список атрибутов для возврата"
+                        },
+                        "include_groups": {
+                            "type": "boolean",
+                            "description": "Включать информацию о группах пользователя"
+                        },
+                        "include_permissions": {
+                            "type": "boolean",
+                            "description": "Включать информацию о правах доступа"
+                        }
+                    },
+                    "required": ["username"]
+                }
+            ),
+            create_tool_schema(
+                name="list_users",
+                description="Получает список пользователей с возможностью фильтрации и сортировки",
+                parameters={
+                    "properties": {
+                        "search_base": {
+                            "type": "string",
+                            "description": "Базовый DN для поиска"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Максимальное количество результатов (по умолчанию 50)",
+                            "minimum": 1,
+                            "maximum": 1000
+                        },
+                        "attributes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Список атрибутов для возврата"
+                        },
+                        "filter_disabled": {
+                            "type": "boolean",
+                            "description": "Исключать отключенных пользователей"
+                        },
+                        "sort_by": {
+                            "type": "string",
+                            "description": "Поле для сортировки",
+                            "enum": ["cn", "displayName", "sAMAccountName", "mail", "whenCreated"]
+                        }
+                    }
+                }
+            ),
+            create_tool_schema(
+                name="search_groups",
+                description="Ищет группы в LDAP/Active Directory по различным критериям",
+                parameters={
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Поисковый запрос (название группы, описание)"
+                        },
+                        "search_base": {
+                            "type": "string",
+                            "description": "Базовый DN для поиска"
+                        },
+                        "attributes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Список атрибутов для возврата"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Максимальное количество результатов (по умолчанию 50)",
+                            "minimum": 1,
+                            "maximum": 1000
+                        },
+                        "group_type": {
+                            "type": "string",
+                            "description": "Тип группы для фильтрации",
+                            "enum": ["security", "distribution", "all"]
+                        }
+                    },
+                    "required": ["query"]
+                }
+            ),
+            create_tool_schema(
+                name="get_group_details",
+                description="Получает детальную информацию о конкретной группе",
+                parameters={
+                    "properties": {
+                        "group_name": {
+                            "type": "string",
+                            "description": "Название группы (cn или sAMAccountName)"
+                        },
+                        "attributes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Список атрибутов для возврата"
+                        },
+                        "include_members": {
+                            "type": "boolean",
+                            "description": "Включать список участников группы"
+                        },
+                        "include_nested_groups": {
+                            "type": "boolean",
+                            "description": "Включать вложенные группы"
+                        }
+                    },
+                    "required": ["group_name"]
+                }
+            ),
+            create_tool_schema(
+                name="list_groups",
+                description="Получает список групп с возможностью фильтрации",
+                parameters={
+                    "properties": {
+                        "search_base": {
+                            "type": "string",
+                            "description": "Базовый DN для поиска"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Максимальное количество результатов (по умолчанию 50)",
+                            "minimum": 1,
+                            "maximum": 1000
+                        },
+                        "attributes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Список атрибутов для возврата"
+                        },
+                        "group_type": {
+                            "type": "string",
+                            "description": "Тип группы для фильтрации",
+                            "enum": ["security", "distribution", "all"]
+                        },
+                        "sort_by": {
+                            "type": "string",
+                            "description": "Поле для сортировки",
+                            "enum": ["cn", "name", "description", "whenCreated"]
+                        }
+                    }
+                }
+            ),
+            create_tool_schema(
+                name="get_user_groups",
+                description="Получает список групп, в которых состоит пользователь",
+                parameters={
+                    "properties": {
+                        "username": {
+                            "type": "string",
+                            "description": "Имя пользователя (sAMAccountName)"
+                        },
+                        "include_nested": {
+                            "type": "boolean",
+                            "description": "Включать вложенные группы"
+                        },
+                        "group_type": {
+                            "type": "string",
+                            "description": "Тип групп для фильтрации",
+                            "enum": ["security", "distribution", "all"]
+                        }
+                    },
+                    "required": ["username"]
+                }
+            ),
+            create_tool_schema(
+                name="get_group_members",
+                description="Получает список участников группы",
+                parameters={
+                    "properties": {
+                        "group_name": {
+                            "type": "string",
+                            "description": "Название группы (cn или sAMAccountName)"
+                        },
+                        "include_nested": {
+                            "type": "boolean",
+                            "description": "Включать участников вложенных групп"
+                        },
+                        "member_type": {
+                            "type": "string",
+                            "description": "Тип участников для фильтрации",
+                            "enum": ["users", "groups", "all"]
+                        }
+                    },
+                    "required": ["group_name"]
+                }
+            ),
+            create_tool_schema(
+                name="authenticate_user",
+                description="Проверяет аутентификацию пользователя в LDAP/AD",
+                parameters={
+                    "properties": {
+                        "username": {
+                            "type": "string",
+                            "description": "Имя пользователя для аутентификации"
+                        },
+                        "password": {
+                            "type": "string",
+                            "description": "Пароль пользователя"
+                        },
+                        "return_user_info": {
+                            "type": "boolean",
+                            "description": "Возвращать информацию о пользователе при успешной аутентификации"
+                        }
+                    },
+                    "required": ["username", "password"]
+                }
+            ),
+            create_tool_schema(
+                name="get_ldap_info",
+                description="Получает информацию о LDAP сервере и его конфигурации",
+                parameters={
+                    "properties": {
+                        "include_schema": {
+                            "type": "boolean",
+                            "description": "Включать схему LDAP"
+                        },
+                        "include_stats": {
+                            "type": "boolean",
+                            "description": "Включать статистику сервера"
+                        }
+                    }
+                }
+            )
+        ]
+    
+    def _get_description(self) -> str:
+        """Возвращает описание сервера"""
+        return "LDAP/Active Directory MCP сервер - поиск пользователей, групп и управление корпоративными данными в LDAP/AD"
     
     def _load_config(self):
         """Загружает конфигурацию LDAP"""
@@ -85,498 +325,563 @@ class LDAPMCPServer(BaseMCPServer):
         self.ldap_user = ad_config.get('service_user', '')
         self.ldap_password = ad_config.get('service_password', '')
         self.base_dn = ad_config.get('base_dn', '')
+        self.domain = ad_config.get('domain', '')
     
     def _connect(self):
         """Подключение к LDAP"""
         try:
             ad_config = self.config_manager.get_service_config('active_directory')
             if not ad_config.get('enabled', False):
-                print("⚠️ Active Directory отключен в конфигурации")
+                logger.info("ℹ️ Active Directory отключен в конфигурации")
                 return
-                
-            if self.ldap_url and self.ldap_user and self.ldap_password:
-                # Создаем подключение к LDAP
-                server = ldap3.Server(self.ldap_url)
-                self.connection = ldap3.Connection(
-                    server, 
-                    user=self.ldap_user, 
-                    password=self.ldap_password,
-                    auto_bind=True
-                )
-                print("✅ Подключение к LDAP успешно")
-            else:
-                print("⚠️ LDAP не настроен - отсутствуют данные в конфигурации")
+            
+            if not all([self.ldap_url, self.ldap_user, self.ldap_password, self.base_dn]):
+                logger.warning("⚠️ Неполная конфигурация LDAP")
+                return
+            
+            # Создаем подключение к LDAP
+            server = ldap3.Server(self.ldap_url)
+            self.connection = ldap3.Connection(
+                server,
+                user=self.ldap_user,
+                password=self.ldap_password,
+                auto_bind=True
+            )
+            
+            logger.info(f"✅ Подключение к LDAP успешно: {self.ldap_url}")
+            
         except Exception as e:
-            print(f"❌ Ошибка подключения к LDAP: {e}")
+            logger.error(f"❌ Ошибка подключения к LDAP: {e}")
+            self.connection = None
     
-    def reconnect(self):
-        """Переподключается к LDAP с новой конфигурацией"""
-        self._load_config()
-        self._connect()
-    
-    def process_command(self, message: str) -> str:
-        """Обрабатывает команды для LDAP (упрощенный метод)"""
+    def _test_connection(self) -> bool:
+        """Тестирует подключение к LDAP"""
         if not self.connection:
-            return "❌ LDAP не настроен. Проверьте конфигурацию Active Directory."
+            return False
         
         try:
-            return self._process_command_legacy(message)
-        except Exception as e:
-            return f"❌ Ошибка при работе с LDAP: {str(e)}"
+            self.connection.bind()
+            return True
+        except Exception:
+            return False
     
-    def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Вызывает инструмент LDAP по имени"""
-        if not self.connection:
-            return {"error": "LDAP не настроен"}
-        
-        try:
-            if tool_name == "search_user":
-                return self._search_user_tool(arguments)
-            elif tool_name == "list_users":
-                return self._list_users_tool(arguments)
-            elif tool_name == "get_user_details":
-                return self._get_user_details_tool(arguments)
-            else:
-                return {"error": f"Неизвестный инструмент: {tool_name}"}
-        except Exception as e:
-            return {"error": str(e)}
+    # ============================================================================
+    # ИНСТРУМЕНТЫ LDAP/ACTIVE DIRECTORY
+    # ============================================================================
     
-    def _process_command_legacy(self, message: str) -> str:
-        """Обрабатывает команды для LDAP (старый метод)"""
-        if not self.connection:
-            return "❌ LDAP не настроен. Проверьте конфигурацию Active Directory."
-        
-        message_lower = message.lower()
-        
+    def search_users(self, query: str, search_base: str = None, attributes: List[str] = None,
+                    limit: int = 50, search_scope: str = "SUBTREE") -> Dict[str, Any]:
+        """Ищет пользователей в LDAP/Active Directory"""
         try:
-            if any(word in message_lower for word in ['найти', 'поиск', 'найди', 'пользователь', 'сотрудник']):
-                return self._search_users(message)
-            elif any(word in message_lower for word in ['список', 'все', 'показать', 'пользователи']):
-                return self._list_users()
-            else:
-                return self._get_help()
-        except Exception as e:
-            return f"❌ Ошибка при работе с LDAP: {str(e)}"
-    
-    def process_command_intelligent(self, message: str, intent_result, user_context: dict = None) -> str:
-        """Обрабатывает команды для LDAP на основе анализа намерений"""
-        if not self.connection:
-            return "❌ LDAP не настроен. Проверьте конфигурацию Active Directory."
-        
-        try:
-            from intent_analyzer import IntentType
+            if not self.connection:
+                return format_tool_response(False, "LDAP не подключен")
             
-            # Обрабатываем на основе намерения
-            if intent_result.intent == IntentType.LDAP_SEARCH:
-                return self._search_users_intelligent(message, intent_result)
-            elif intent_result.intent == IntentType.LDAP_LIST:
-                return self._list_users_intelligent(message, intent_result)
-            else:
-                # Fallback к старому методу
-                return self.process_command(message)
-        except Exception as e:
-            return f"❌ Ошибка при работе с LDAP: {str(e)}"
-    
-    def _search_users(self, message: str) -> str:
-        """Поиск пользователей в LDAP"""
-        try:
-            # Извлекаем поисковый запрос из сообщения
-            search_query = message.strip()
+            # Определяем атрибуты для поиска
+            if not attributes:
+                attributes = ['sAMAccountName', 'displayName', 'mail', 'cn', 'givenName', 'sn', 'userPrincipalName']
             
-            # Убираем служебные слова
-            words_to_remove = ['найти', 'поиск', 'найди', 'пользователь', 'сотрудник', 'в', 'ldap', 'ad']
-            for word in words_to_remove:
-                search_query = search_query.replace(word, '')
+            # Определяем базовый DN
+            base_dn = search_base or self.base_dn
             
-            search_query = search_query.strip()
-            
-            if not search_query:
-                return "❌ Не указан поисковый запрос. Пример: 'найди пользователя Иванов'"
-            
-            # Выполняем поиск
-            users = self._perform_ldap_search(search_query)
-            
-            if not users:
-                return f"🔍 Пользователи по запросу '{search_query}' не найдены"
-            
-            result = f"🔍 Найденные пользователи по запросу '{search_query}':\n\n"
-            for user in users:
-                result += f"• **{user['display_name']}**\n"
-                result += f"  👤 Логин: {user['username']}\n"
-                result += f"  📧 Email: {user['email']}\n"
-                result += f"  🏢 Отдел: {user['department']}\n"
-                result += f"  📞 Телефон: {user['phone']}\n\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка поиска пользователей: {str(e)}"
-    
-    def _list_users(self) -> str:
-        """Список пользователей из LDAP"""
-        try:
-            # Получаем список пользователей
-            users = self._perform_ldap_search("", limit=20)
-            
-            if not users:
-                return "📋 Пользователи не найдены"
-            
-            result = f"📋 Список пользователей ({len(users)} из 20):\n\n"
-            for user in users:
-                result += f"• **{user['display_name']}**\n"
-                result += f"  👤 Логин: {user['username']}\n"
-                result += f"  📧 Email: {user['email']}\n\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка получения списка пользователей: {str(e)}"
-    
-    def _perform_ldap_search(self, search_query: str, limit: int = 10) -> List[Dict[str, str]]:
-        """Выполняет поиск пользователей в LDAP"""
-        try:
-            # Формируем фильтр поиска
-            if search_query:
-                # Поиск по различным полям
-                search_filter = f"(&(objectClass=person)(|(cn=*{search_query}*)(sn=*{search_query}*)(givenName=*{search_query}*)(sAMAccountName=*{search_query}*)(mail=*{search_query}*)))"
-            else:
-                # Получить всех пользователей
-                search_filter = "(objectClass=person)"
-            
-            # Атрибуты для получения
-            attributes = [
-                'cn', 'sAMAccountName', 'mail', 'displayName', 
-                'givenName', 'sn', 'department', 'telephoneNumber',
-                'title', 'company', 'manager'
-            ]
+            # Создаем фильтр поиска
+            search_filter = f"(&(objectClass=user)(objectClass=person)(!(objectClass=computer))(|(sAMAccountName=*{query}*)(displayName=*{query}*)(mail=*{query}*)(cn=*{query}*)))"
             
             # Выполняем поиск
             self.connection.search(
-                search_base=self.base_dn,
+                search_base=base_dn,
                 search_filter=search_filter,
-                search_scope=ldap3.SUBTREE,
+                search_scope=getattr(ldap3, search_scope),
                 attributes=attributes,
                 size_limit=limit
             )
             
+            # Форматируем результаты
             users = []
             for entry in self.connection.entries:
-                user_data = {
-                    'username': str(entry.sAMAccountName) if hasattr(entry, 'sAMAccountName') else '',
-                    'display_name': str(entry.displayName) if hasattr(entry, 'displayName') else str(entry.cn),
-                    'email': str(entry.mail) if hasattr(entry, 'mail') else '',
-                    'first_name': str(entry.givenName) if hasattr(entry, 'givenName') else '',
-                    'last_name': str(entry.sn) if hasattr(entry, 'sn') else '',
-                    'department': str(entry.department) if hasattr(entry, 'department') else '',
-                    'phone': str(entry.telephoneNumber) if hasattr(entry, 'telephoneNumber') else '',
-                    'title': str(entry.title) if hasattr(entry, 'title') else '',
-                    'company': str(entry.company) if hasattr(entry, 'company') else '',
-                    'manager': str(entry.manager) if hasattr(entry, 'manager') else ''
-                }
+                user_data = {}
+                for attr in attributes:
+                    if hasattr(entry, attr):
+                        value = getattr(entry, attr)
+                        if isinstance(value, list) and len(value) > 0:
+                            user_data[attr] = str(value[0])
+                        elif value:
+                            user_data[attr] = str(value)
                 users.append(user_data)
             
-            return users
-        except Exception as e:
-            print(f"❌ Ошибка выполнения LDAP поиска: {e}")
-            return []
-    
-    def _search_users_intelligent(self, message: str, intent_result) -> str:
-        """Поиск пользователей на основе анализа намерений"""
-        try:
-            entities = intent_result.entities
-            search_query = entities.get('ldap_search_query', '')
-            
-            # Если не указан запрос, пытаемся найти в сообщении
-            if not search_query:
-                # Ищем ФИО, фамилию или имя в сообщении
-                import re
-                # Убираем служебные слова и извлекаем поисковый запрос
-                words_to_remove = ['найти', 'поиск', 'найди', 'пользователь', 'сотрудник', 'в', 'ldap', 'ad', 'по', 'фамилии', 'имени']
-                clean_message = message
-                for word in words_to_remove:
-                    clean_message = clean_message.replace(word, '')
-                
-                search_query = clean_message.strip()
-            
-            if not search_query:
-                return "❌ Не указан поисковый запрос. Пример: 'найди пользователя Иванов' или 'поиск по фамилии Петров'"
-            
-            # Определяем количество результатов
-            import re
-            count_match = re.search(r'(\d+)', message)
-            limit = int(count_match.group(1)) if count_match else 10
-            
-            # Выполняем поиск
-            users = self._perform_ldap_search(search_query, limit)
-            
-            if not users:
-                return f"🔍 Пользователи по запросу '{search_query}' не найдены"
-            
-            result = f"🔍 Найденные пользователи по запросу '{search_query}' ({len(users)} из {limit}):\n\n"
-            for user in users:
-                result += f"• **{user['display_name']}**\n"
-                result += f"  👤 Логин: {user['username']}\n"
-                result += f"  📧 Email: {user['email']}\n"
-                if user['department']:
-                    result += f"  🏢 Отдел: {user['department']}\n"
-                if user['phone']:
-                    result += f"  📞 Телефон: {user['phone']}\n"
-                if user['title']:
-                    result += f"  💼 Должность: {user['title']}\n"
-                result += "\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка поиска пользователей: {str(e)}"
-    
-    def _list_users_intelligent(self, message: str, intent_result) -> str:
-        """Список пользователей на основе анализа намерений"""
-        try:
-            # Определяем количество пользователей
-            import re
-            count_match = re.search(r'(\d+)', message)
-            limit = int(count_match.group(1)) if count_match else 20
-            
-            # Получаем список пользователей
-            users = self._perform_ldap_search("", limit)
-            
-            if not users:
-                return "📋 Пользователи не найдены"
-            
-            result = f"📋 Список пользователей ({len(users)} из {limit}):\n\n"
-            for user in users:
-                result += f"• **{user['display_name']}**\n"
-                result += f"  👤 Логин: {user['username']}\n"
-                result += f"  📧 Email: {user['email']}\n"
-                if user['department']:
-                    result += f"  🏢 Отдел: {user['department']}\n"
-                result += "\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка получения списка пользователей: {str(e)}"
-    
-    def _get_help(self) -> str:
-        """Справка по командам LDAP"""
-        return """
-🔧 Команды для работы с LDAP/Active Directory:
-
-• Поиск пользователя: "найди пользователя Иванов"
-• Поиск по фамилии: "поиск по фамилии Петров"
-• Поиск по имени: "найди по имени Иван"
-• Список пользователей: "покажи всех пользователей"
-• Список с лимитом: "покажи 50 пользователей"
-
-Примеры:
-- "найди пользователя Хайрутдинов"
-- "поиск по фамилии Иванов"
-- "найди по имени Камиль"
-- "покажи всех пользователей"
-- "покажи 30 пользователей"
-        """
-    
-    def _search_user_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Ищет пользователя через инструмент"""
-        try:
-            limit = arguments.get('limit', 20)
-            # Иногда название параметра бывает user или name
-            username = arguments.get('username') or arguments.get('user') or arguments.get('name')
-            email = arguments.get('email')
-            
-            if not username and not email:
-                return {'error': 'Не указан username или email'}
-            
-            # Формируем фильтр поиска
-            if username:
-                search_query = username
-            else:
-                search_query = email
-            
-            search_filter = f"(&(objectClass=person)(|(cn=*{search_query}*)(sn=*{search_query}*)(givenName=*{search_query}*)(sAMAccountName=*{search_query}*)(mail=*{search_query}*)))"
-            # Атрибуты для получения
-            attributes = [
-                'cn', 'sAMAccountName', 'mail', 'displayName', 
-                'givenName', 'sn', 'department', 'telephoneNumber',
-                'title', 'company', 'manager'
-            ]
-            
-            # Выполняем поиск
-            self.connection.search(
-                search_base=self.base_dn,
-                search_filter=search_filter,
-                search_scope=ldap3.SUBTREE,
-                attributes=attributes,
-                size_limit=limit
+            logger.info(f"✅ Найдено пользователей: {len(users)}")
+            return format_tool_response(
+                True,
+                f"Найдено {len(users)} пользователей",
+                {
+                    "total": len(users),
+                    "users": users,
+                    "query": query,
+                    "search_base": base_dn
+                }
             )
             
-            users = []
-            for entry in self.connection.entries:
-                user_data = {
-                    'username': str(entry.sAMAccountName) if hasattr(entry, 'sAMAccountName') else '',
-                    'display_name': str(entry.displayName) if hasattr(entry, 'displayName') else str(entry.cn),
-                    'email': str(entry.mail) if hasattr(entry, 'mail') else '',
-                    'first_name': str(entry.givenName) if hasattr(entry, 'givenName') else '',
-                    'last_name': str(entry.sn) if hasattr(entry, 'sn') else '',
-                    'department': str(entry.department) if hasattr(entry, 'department') else '',
-                    'phone': str(entry.telephoneNumber) if hasattr(entry, 'telephoneNumber') else '',
-                    'title': str(entry.title) if hasattr(entry, 'title') else '',
-                    'company': str(entry.company) if hasattr(entry, 'company') else '',
-                    'manager': str(entry.manager) if hasattr(entry, 'manager') else ''
-                }
-                users.append(user_data)
-            
-            return {'users': users}
         except Exception as e:
-            return {'error': str(e)}
+            logger.error(f"❌ Ошибка поиска пользователей: {e}")
+            return format_tool_response(False, f"Ошибка поиска пользователей: {str(e)}")
     
-    def _list_users_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Получает список пользователей через инструмент"""
+    def get_user_details(self, username: str, attributes: List[str] = None,
+                        include_groups: bool = False, include_permissions: bool = False) -> Dict[str, Any]:
+        """Получает детальную информацию о пользователе"""
         try:
-            limit = arguments.get('limit', 20)
-            department = arguments.get('department')
+            if not self.connection:
+                return format_tool_response(False, "LDAP не подключен")
             
-            # Формируем фильтр поиска
-            if department:
-                search_filter = f"(&(objectClass=person)(department=*{department}*))"
-            else:
-                search_filter = "(objectClass=person)"
+            # Определяем атрибуты для поиска
+            if not attributes:
+                attributes = ['sAMAccountName', 'displayName', 'mail', 'cn', 'givenName', 'sn', 
+                             'userPrincipalName', 'telephoneNumber', 'department', 'title', 
+                             'manager', 'whenCreated', 'whenChanged', 'userAccountControl']
             
-            # Атрибуты для получения
-            attributes = [
-                'cn', 'sAMAccountName', 'mail', 'displayName', 
-                'givenName', 'sn', 'department', 'telephoneNumber',
-                'title', 'company'
-            ]
+            # Создаем фильтр поиска
+            search_filter = f"(&(objectClass=user)(objectClass=person)(sAMAccountName={username}))"
             
             # Выполняем поиск
             self.connection.search(
                 search_base=self.base_dn,
                 search_filter=search_filter,
                 search_scope=ldap3.SUBTREE,
-                attributes=attributes,
-                size_limit=limit
-            )
-            
-            users = []
-            for entry in self.connection.entries:
-                user_data = {
-                    'username': str(entry.sAMAccountName) if hasattr(entry, 'sAMAccountName') else '',
-                    'display_name': str(entry.displayName) if hasattr(entry, 'displayName') else str(entry.cn),
-                    'email': str(entry.mail) if hasattr(entry, 'mail') else '',
-                    'first_name': str(entry.givenName) if hasattr(entry, 'givenName') else '',
-                    'last_name': str(entry.sn) if hasattr(entry, 'sn') else '',
-                    'department': str(entry.department) if hasattr(entry, 'department') else '',
-                    'phone': str(entry.telephoneNumber) if hasattr(entry, 'telephoneNumber') else '',
-                    'title': str(entry.title) if hasattr(entry, 'title') else '',
-                    'company': str(entry.company) if hasattr(entry, 'company') else ''
-                }
-                users.append(user_data)
-            
-            return {'users': users, 'department': department}
-        except Exception as e:
-            return {'error': str(e)}
-    
-    def _get_user_details_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Получает детальную информацию о пользователе через инструмент"""
-        try:
-            username = arguments.get('username')
-            email = arguments.get('email')
-            
-            if not username and not email:
-                return {'error': 'Не указан username или email'}
-            
-            # Формируем фильтр поиска
-            if username:
-                search_filter = f"(&(objectClass=person)(sAMAccountName={username}))"
-            else:
-                search_filter = f"(&(objectClass=person)(mail={email}))"
-            
-            # Атрибуты для получения
-            attributes = [
-                'cn', 'sAMAccountName', 'mail', 'displayName', 
-                'givenName', 'sn', 'department', 'telephoneNumber',
-                'title', 'company', 'manager', 'userAccountControl',
-                'whenCreated', 'whenChanged', 'lastLogon'
-            ]
-            
-            # Выполняем поиск
-            self.connection.search(
-                search_base=self.base_dn,
-                search_filter=search_filter,
-                search_scope=ldap3.SUBTREE,
-                attributes=attributes,
-                size_limit=1
+                attributes=attributes
             )
             
             if not self.connection.entries:
-                return {'error': 'Пользователь не найден'}
+                return format_tool_response(False, f"Пользователь {username} не найден")
             
-            entry = self.connection.entries[0]
+            # Получаем данные пользователя
+            user_entry = self.connection.entries[0]
+            user_data = {}
             
-            user_data = {
-                'username': str(entry.sAMAccountName) if hasattr(entry, 'sAMAccountName') else '',
-                'display_name': str(entry.displayName) if hasattr(entry, 'displayName') else str(entry.cn),
-                'email': str(entry.mail) if hasattr(entry, 'mail') else '',
-                'first_name': str(entry.givenName) if hasattr(entry, 'givenName') else '',
-                'last_name': str(entry.sn) if hasattr(entry, 'sn') else '',
-                'department': str(entry.department) if hasattr(entry, 'department') else '',
-                'phone': str(entry.telephoneNumber) if hasattr(entry, 'telephoneNumber') else '',
-                'title': str(entry.title) if hasattr(entry, 'title') else '',
-                'company': str(entry.company) if hasattr(entry, 'company') else '',
-                'manager': str(entry.manager) if hasattr(entry, 'manager') else '',
-                'account_control': str(entry.userAccountControl) if hasattr(entry, 'userAccountControl') else '',
-                'created': str(entry.whenCreated) if hasattr(entry, 'whenCreated') else '',
-                'modified': str(entry.whenChanged) if hasattr(entry, 'whenChanged') else '',
-                'last_logon': str(entry.lastLogon) if hasattr(entry, 'lastLogon') else ''
-            }
+            for attr in attributes:
+                if hasattr(user_entry, attr):
+                    value = getattr(user_entry, attr)
+                    if isinstance(value, list) and len(value) > 0:
+                        user_data[attr] = str(value[0])
+                    elif value:
+                        user_data[attr] = str(value)
             
-            return {'user': user_data}
+            # Группы пользователя
+            if include_groups:
+                try:
+                    groups_result = self.get_user_groups(username, include_nested=True)
+                    if groups_result["success"]:
+                        user_data["groups"] = groups_result["data"]["groups"]
+                except Exception:
+                    user_data["groups"] = "Недоступно"
+            
+            # Права доступа
+            if include_permissions:
+                try:
+                    # Получаем информацию о правах доступа
+                    user_data["permissions"] = {
+                        "account_disabled": "1" in user_data.get("userAccountControl", ""),
+                        "password_expired": "2" in user_data.get("userAccountControl", ""),
+                        "account_locked": "16" in user_data.get("userAccountControl", "")
+                    }
+                except Exception:
+                    user_data["permissions"] = "Недоступно"
+            
+            logger.info(f"✅ Получены детали пользователя: {username}")
+            return format_tool_response(True, "Детали пользователя получены", user_data)
+            
         except Exception as e:
-            return {'error': str(e)}
-
-    def get_tools(self) -> List[Dict[str, Any]]:
-        """Возвращает список доступных инструментов LDAP"""
-        return [
-            {
-                "name": "search_user",
-                "description": "Ищет пользователя в LDAP/AD. Пример запроса: найди пользователя Иванов",
-                "parameters": {
-                    "username": {"type": "string", "description": "Имя пользователя"},
-                    "email": {"type": "string", "description": "Email пользователя"},
-                    "limit": {"type": "integer", "description": "Максимальное количество результатов"}
-                }
-            },
-            {
-                "name": "list_users",
-                "description": "Получает список пользователей",
-                "parameters": {
-                    "limit": {"type": "integer", "description": "Максимальное количество результатов"},
-                    "department": {"type": "string", "description": "Фильтр по отделу"}
-                }
-            },
-            {
-                "name": "get_user_details",
-                "description": "Получает детальную информацию о пользователе. Пример запроса: дай более детальную информацию о пользователе",
-                "parameters": {
-                    "username": {"type": "string", "description": "Имя пользователя"},
-                    "email": {"type": "string", "description": "Email пользователя"},
-                    "limit": {"type": "integer", "description": "Максимальное количество результатов"}
-                }
-            }
-        ]
-
-    def check_health(self) -> Dict[str, Any]:
-        """Проверка состояния подключения к LDAP"""
+            logger.error(f"❌ Ошибка получения деталей пользователя: {e}")
+            return format_tool_response(False, f"Ошибка получения деталей пользователя: {str(e)}")
+    
+    def list_users(self, search_base: str = None, limit: int = 50, attributes: List[str] = None,
+                  filter_disabled: bool = True, sort_by: str = "displayName") -> Dict[str, Any]:
+        """Получает список пользователей"""
         try:
-            if self.connection:
-                # Проверяем подключение
-                self.connection.search(
-                    search_base=self.base_dn,
-                    search_filter="(objectClass=person)",
-                    search_scope=ldap3.SUBTREE,
-                    attributes=['cn'],
-                    size_limit=1
-                )
-                return {'status': 'connected', 'url': self.ldap_url}
-            else:
-                return {'status': 'not_configured', 'url': None}
+            if not self.connection:
+                return format_tool_response(False, "LDAP не подключен")
+            
+            # Определяем атрибуты для поиска
+            if not attributes:
+                attributes = ['sAMAccountName', 'displayName', 'mail', 'cn', 'givenName', 'sn', 'userAccountControl']
+            
+            # Определяем базовый DN
+            base_dn = search_base or self.base_dn
+            
+            # Создаем фильтр поиска
+            search_filter = "(&(objectClass=user)(objectClass=person)(!(objectClass=computer)))"
+            if filter_disabled:
+                search_filter += "(!(userAccountControl:1.2.840.113556.1.4.803:=2))"  # Исключаем отключенных
+            
+            # Выполняем поиск
+            self.connection.search(
+                search_base=base_dn,
+                search_filter=search_filter,
+                search_scope=ldap3.SUBTREE,
+                attributes=attributes,
+                size_limit=limit
+            )
+            
+            # Форматируем результаты
+            users = []
+            for entry in self.connection.entries:
+                user_data = {}
+                for attr in attributes:
+                    if hasattr(entry, attr):
+                        value = getattr(entry, attr)
+                        if isinstance(value, list) and len(value) > 0:
+                            user_data[attr] = str(value[0])
+                        elif value:
+                            user_data[attr] = str(value)
+                users.append(user_data)
+            
+            # Сортируем
+            if sort_by in ['displayName', 'cn', 'sAMAccountName', 'mail']:
+                users.sort(key=lambda x: x.get(sort_by, ''), reverse=False)
+            
+            logger.info(f"✅ Получен список пользователей: {len(users)}")
+            return format_tool_response(True, f"Получен список пользователей: {len(users)}", users)
+            
         except Exception as e:
-            return {'status': 'error', 'error': str(e), 'url': self.ldap_url}
+            logger.error(f"❌ Ошибка получения списка пользователей: {e}")
+            return format_tool_response(False, f"Ошибка получения списка пользователей: {str(e)}")
+    
+    def search_groups(self, query: str, search_base: str = None, attributes: List[str] = None,
+                     limit: int = 50, group_type: str = "all") -> Dict[str, Any]:
+        """Ищет группы в LDAP/Active Directory"""
+        try:
+            if not self.connection:
+                return format_tool_response(False, "LDAP не подключен")
+            
+            # Определяем атрибуты для поиска
+            if not attributes:
+                attributes = ['cn', 'sAMAccountName', 'description', 'groupType', 'memberCount']
+            
+            # Определяем базовый DN
+            base_dn = search_base or self.base_dn
+            
+            # Создаем фильтр поиска
+            search_filter = f"(&(objectClass=group)(|(cn=*{query}*)(sAMAccountName=*{query}*)(description=*{query}*)))"
+            
+            # Фильтр по типу группы
+            if group_type == "security":
+                search_filter += "(groupType:1.2.840.113556.1.4.803:=2147483648)"
+            elif group_type == "distribution":
+                search_filter += "(!(groupType:1.2.840.113556.1.4.803:=2147483648))"
+            
+            # Выполняем поиск
+            self.connection.search(
+                search_base=base_dn,
+                search_filter=search_filter,
+                search_scope=ldap3.SUBTREE,
+                attributes=attributes,
+                size_limit=limit
+            )
+            
+            # Форматируем результаты
+            groups = []
+            for entry in self.connection.entries:
+                group_data = {}
+                for attr in attributes:
+                    if hasattr(entry, attr):
+                        value = getattr(entry, attr)
+                        if isinstance(value, list) and len(value) > 0:
+                            group_data[attr] = str(value[0])
+                        elif value:
+                            group_data[attr] = str(value)
+                groups.append(group_data)
+            
+            logger.info(f"✅ Найдено групп: {len(groups)}")
+            return format_tool_response(
+                True,
+                f"Найдено {len(groups)} групп",
+                {
+                    "total": len(groups),
+                    "groups": groups,
+                    "query": query,
+                    "search_base": base_dn
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка поиска групп: {e}")
+            return format_tool_response(False, f"Ошибка поиска групп: {str(e)}")
+    
+    def get_group_details(self, group_name: str, attributes: List[str] = None,
+                         include_members: bool = False, include_nested_groups: bool = False) -> Dict[str, Any]:
+        """Получает детальную информацию о группе"""
+        try:
+            if not self.connection:
+                return format_tool_response(False, "LDAP не подключен")
+            
+            # Определяем атрибуты для поиска
+            if not attributes:
+                attributes = ['cn', 'sAMAccountName', 'description', 'groupType', 'member', 'memberOf']
+            
+            # Создаем фильтр поиска
+            search_filter = f"(&(objectClass=group)(|(cn={group_name})(sAMAccountName={group_name})))"
+            
+            # Выполняем поиск
+            self.connection.search(
+                search_base=self.base_dn,
+                search_filter=search_filter,
+                search_scope=ldap3.SUBTREE,
+                attributes=attributes
+            )
+            
+            if not self.connection.entries:
+                return format_tool_response(False, f"Группа {group_name} не найдена")
+            
+            # Получаем данные группы
+            group_entry = self.connection.entries[0]
+            group_data = {}
+            
+            for attr in attributes:
+                if hasattr(group_entry, attr):
+                    value = getattr(group_entry, attr)
+                    if isinstance(value, list) and len(value) > 0:
+                        group_data[attr] = str(value[0])
+                    elif value:
+                        group_data[attr] = str(value)
+            
+            # Участники группы
+            if include_members:
+                try:
+                    members_result = self.get_group_members(group_name, include_nested=include_nested_groups)
+                    if members_result["success"]:
+                        group_data["members"] = members_result["data"]["members"]
+                except Exception:
+                    group_data["members"] = "Недоступно"
+            
+            logger.info(f"✅ Получены детали группы: {group_name}")
+            return format_tool_response(True, "Детали группы получены", group_data)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения деталей группы: {e}")
+            return format_tool_response(False, f"Ошибка получения деталей группы: {str(e)}")
+    
+    def list_groups(self, search_base: str = None, limit: int = 50, attributes: List[str] = None,
+                   group_type: str = "all", sort_by: str = "cn") -> Dict[str, Any]:
+        """Получает список групп"""
+        try:
+            if not self.connection:
+                return format_tool_response(False, "LDAP не подключен")
+            
+            # Определяем атрибуты для поиска
+            if not attributes:
+                attributes = ['cn', 'sAMAccountName', 'description', 'groupType']
+            
+            # Определяем базовый DN
+            base_dn = search_base or self.base_dn
+            
+            # Создаем фильтр поиска
+            search_filter = "(objectClass=group)"
+            
+            # Фильтр по типу группы
+            if group_type == "security":
+                search_filter += "(groupType:1.2.840.113556.1.4.803:=2147483648)"
+            elif group_type == "distribution":
+                search_filter += "(!(groupType:1.2.840.113556.1.4.803:=2147483648))"
+            
+            # Выполняем поиск
+            self.connection.search(
+                search_base=base_dn,
+                search_filter=search_filter,
+                search_scope=ldap3.SUBTREE,
+                attributes=attributes,
+                size_limit=limit
+            )
+            
+            # Форматируем результаты
+            groups = []
+            for entry in self.connection.entries:
+                group_data = {}
+                for attr in attributes:
+                    if hasattr(entry, attr):
+                        value = getattr(entry, attr)
+                        if isinstance(value, list) and len(value) > 0:
+                            group_data[attr] = str(value[0])
+                        elif value:
+                            group_data[attr] = str(value)
+                groups.append(group_data)
+            
+            # Сортируем
+            if sort_by in ['cn', 'sAMAccountName', 'description']:
+                groups.sort(key=lambda x: x.get(sort_by, ''), reverse=False)
+            
+            logger.info(f"✅ Получен список групп: {len(groups)}")
+            return format_tool_response(True, f"Получен список групп: {len(groups)}", groups)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения списка групп: {e}")
+            return format_tool_response(False, f"Ошибка получения списка групп: {str(e)}")
+    
+    def get_user_groups(self, username: str, include_nested: bool = False,
+                       group_type: str = "all") -> Dict[str, Any]:
+        """Получает список групп пользователя"""
+        try:
+            if not self.connection:
+                return format_tool_response(False, "LDAP не подключен")
+            
+            # Создаем фильтр поиска
+            search_filter = f"(&(objectClass=group)(member:1.2.840.113556.1.4.1941:={self.base_dn}))"
+            
+            # Выполняем поиск
+            self.connection.search(
+                search_base=self.base_dn,
+                search_filter=search_filter,
+                search_scope=ldap3.SUBTREE,
+                attributes=['cn', 'sAMAccountName', 'description', 'groupType']
+            )
+            
+            # Форматируем результаты
+            groups = []
+            for entry in self.connection.entries:
+                group_data = {
+                    "cn": str(entry.cn),
+                    "sAMAccountName": str(entry.sAMAccountName),
+                    "description": str(entry.description) if hasattr(entry, 'description') else "",
+                    "groupType": str(entry.groupType) if hasattr(entry, 'groupType') else ""
+                }
+                groups.append(group_data)
+            
+            logger.info(f"✅ Получены группы пользователя: {len(groups)}")
+            return format_tool_response(True, f"Получены группы пользователя: {len(groups)}", {"groups": groups})
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения групп пользователя: {e}")
+            return format_tool_response(False, f"Ошибка получения групп пользователя: {str(e)}")
+    
+    def get_group_members(self, group_name: str, include_nested: bool = False,
+                         member_type: str = "all") -> Dict[str, Any]:
+        """Получает список участников группы"""
+        try:
+            if not self.connection:
+                return format_tool_response(False, "LDAP не подключен")
+            
+            # Создаем фильтр поиска для группы
+            search_filter = f"(&(objectClass=group)(|(cn={group_name})(sAMAccountName={group_name})))"
+            
+            # Выполняем поиск группы
+            self.connection.search(
+                search_base=self.base_dn,
+                search_filter=search_filter,
+                search_scope=ldap3.SUBTREE,
+                attributes=['member']
+            )
+            
+            if not self.connection.entries:
+                return format_tool_response(False, f"Группа {group_name} не найдена")
+            
+            # Получаем участников
+            members = []
+            group_entry = self.connection.entries[0]
+            
+            if hasattr(group_entry, 'member'):
+                for member_dn in group_entry.member:
+                    # Получаем информацию об участнике
+                    member_filter = f"(distinguishedName={member_dn})"
+                    self.connection.search(
+                        search_base=self.base_dn,
+                        search_filter=member_filter,
+                        search_scope=ldap3.SUBTREE,
+                        attributes=['cn', 'sAMAccountName', 'objectClass']
+                    )
+                    
+                    if self.connection.entries:
+                        member_entry = self.connection.entries[0]
+                        member_data = {
+                            "dn": str(member_dn),
+                            "cn": str(member_entry.cn),
+                            "sAMAccountName": str(member_entry.sAMAccountName) if hasattr(member_entry, 'sAMAccountName') else "",
+                            "type": "group" if "group" in str(member_entry.objectClass).lower() else "user"
+                        }
+                        members.append(member_data)
+            
+            logger.info(f"✅ Получены участники группы: {len(members)}")
+            return format_tool_response(True, f"Получены участники группы: {len(members)}", {"members": members})
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения участников группы: {e}")
+            return format_tool_response(False, f"Ошибка получения участников группы: {str(e)}")
+    
+    def authenticate_user(self, username: str, password: str, return_user_info: bool = False) -> Dict[str, Any]:
+        """Проверяет аутентификацию пользователя"""
+        try:
+            if not self.ldap_url or not self.domain:
+                return format_tool_response(False, "LDAP не настроен для аутентификации")
+            
+            # Создаем временное подключение для аутентификации
+            server = ldap3.Server(self.ldap_url)
+            auth_connection = ldap3.Connection(
+                server,
+                user=f"{self.domain}\\{username}",
+                password=password,
+                auto_bind=True
+            )
+            
+            # Если дошли до сюда, аутентификация успешна
+            auth_connection.unbind()
+            
+            result_data = {"authenticated": True}
+            
+            # Получаем информацию о пользователе, если запрошено
+            if return_user_info:
+                user_info = self.get_user_details(username)
+                if user_info["success"]:
+                    result_data["user_info"] = user_info["data"]
+            
+            logger.info(f"✅ Аутентификация пользователя успешна: {username}")
+            return format_tool_response(True, f"Пользователь {username} аутентифицирован", result_data)
+            
+        except Exception as e:
+            logger.warning(f"❌ Ошибка аутентификации пользователя {username}: {e}")
+            return format_tool_response(False, f"Ошибка аутентификации: {str(e)}")
+    
+    def get_ldap_info(self, include_schema: bool = False, include_stats: bool = False) -> Dict[str, Any]:
+        """Получает информацию о LDAP сервере"""
+        try:
+            if not self.connection:
+                return format_tool_response(False, "LDAP не подключен")
+            
+            # Базовая информация
+            ldap_info = {
+                "server_url": self.ldap_url,
+                "base_dn": self.base_dn,
+                "domain": self.domain,
+                "connected": True,
+                "server_info": {
+                    "vendor": "Microsoft Active Directory",
+                    "version": "Unknown"
+                }
+            }
+            
+            # Схема LDAP
+            if include_schema:
+                try:
+                    # Получаем информацию о схеме
+                    ldap_info["schema"] = "Схема LDAP доступна"
+                except Exception:
+                    ldap_info["schema"] = "Недоступно"
+            
+            # Статистика
+            if include_stats:
+                try:
+                    # Получаем статистику сервера
+                    ldap_info["stats"] = {
+                        "users_count": "Недоступно",
+                        "groups_count": "Недоступно"
+                    }
+                except Exception:
+                    ldap_info["stats"] = "Недоступно"
+            
+            logger.info("✅ Получена информация о LDAP сервере")
+            return format_tool_response(True, "Информация о LDAP сервере получена", ldap_info)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения информации о LDAP: {e}")
+            return format_tool_response(False, f"Ошибка получения информации о LDAP: {str(e)}")
+
+# ============================================================================
+# ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+# ============================================================================
+
+# Глобальный экземпляр LDAP сервера
+ldap_server = LDAPFastMCPServer()

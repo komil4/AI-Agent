@@ -129,9 +129,10 @@ class LLMClient:
             available_tools = tools_context.get('available_tools', [])
             user_message = tools_context.get('user_message', '')
             user_context = tools_context.get('user_context', {})
+            chat_history = tools_context.get('chat_history', [])
             
-            # Формируем сообщения для LLM
-            messages = self._format_messages_with_tools(user_message, available_tools, user_context)
+            # Формируем сообщения для LLM с учетом истории чата
+            messages = self._format_messages_with_tools(user_message, available_tools, user_context, chat_history)
             
             # Генерируем ответ с инструментами
             response = await self.llm_provider.generate_with_tools(user_message, messages, available_tools)
@@ -207,7 +208,7 @@ class LLMClient:
         
         return messages
     
-    def _format_messages_with_tools(self, message: str, tools: List[Dict[str, Any]], context: Dict[str, Any]) -> List[Dict[str, str]]:
+    def _format_messages_with_tools(self, message: str, tools: List[Dict[str, Any]], context: Dict[str, Any], chat_history: List[Dict[str, Any]] = None) -> List[Dict[str, str]]:
         """Форматирует сообщения с инструментами для LLM"""
         messages = []
         
@@ -233,9 +234,16 @@ class LLMClient:
         
         messages.append({"role": "system", "content": system_prompt})
         
+        # Добавляем историю чата, если она есть
+        if chat_history:
+            for msg in chat_history[-10:]:  # Берем последние 10 сообщений
+                role = "user" if msg.get('role') == 'user' else "assistant"
+                content = msg.get('content', '')
+                if content.strip():  # Добавляем только непустые сообщения
+                    messages.append({"role": role, "content": content})
         
-        # Сообщение пользователя
-        #messages.append({"role": "user", "content": message})
+        # Добавляем текущее сообщение пользователя
+        messages.append({"role": "user", "content": message})
         
         return messages
     

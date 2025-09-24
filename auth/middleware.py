@@ -1,3 +1,12 @@
+#!/usr/bin/env python3
+"""
+Middleware для аутентификации
+"""
+
+# ============================================================================
+# ИНИЦИАЛИЗАЦИЯ МОДУЛЯ
+# ============================================================================
+
 from fastapi import Request, HTTPException, status
 from fastapi.responses import RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -9,8 +18,15 @@ from .session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# ПРОГРАММНЫЙ ИНТЕРФЕЙС (API)
+# ============================================================================
+
 class AuthMiddleware(BaseHTTPMiddleware):
+    """Middleware для проверки аутентификации"""
+    
     def __init__(self, app, excluded_paths: list = None, session_manager=None):
+        """Инициализация middleware"""
         super().__init__(app)
         self.excluded_paths = excluded_paths or [
             '/',
@@ -36,6 +52,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self.session_manager = session_manager  # Сохраняем переданный session_manager
     
     async def dispatch(self, request: Request, call_next: Callable):
+        """Обработка запроса через middleware"""
         # Проверяем, нужно ли исключить путь из проверки авторизации
         if self._is_excluded_path(request.url.path):
             response = await call_next(request)
@@ -53,80 +70,95 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     detail="Требуется аутентификация"
                 )
             else:
-                return RedirectResponse(url="/login", status_code=302)
-        
-        # Получаем session_manager
-        session_manager = self.session_manager
-        if not session_manager:
-            # Fallback: пытаемся получить из глобального контекста
-            import sys
-            app_module = sys.modules.get('app')
-            
-            if app_module and hasattr(app_module, 'session_manager'):
-                session_manager = app_module.session_manager
-            else:
-                logger.error("Не удалось найти session_manager")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Ошибка конфигурации сервера"
-                )
+                return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
         
         # Проверяем сессию
-        session_data = session_manager.get_session(session_id)
-        
+        session_data = self.session_manager.get_session(session_id)
         if not session_data:
-            logger.warning(f"Сессия {session_id} недействительна для пути {request.url.path}")
-            # Сессия недействительна
+            logger.warning(f"Недействительная сессия {session_id} для пути {request.url.path}")
+            # Если сессия недействительна, перенаправляем на страницу логина
             if request.url.path.startswith('/api/'):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Сессия истекла"
                 )
             else:
-                return RedirectResponse(url="/login", status_code=302)
+                return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
         
-        # Обновляем время последней активности
-        session_manager.update_session_activity(session_id)
+        # Проверяем JWT токен
+        access_token = session_data.get('access_token')
+        if access_token:
+            user_info = self.ad_auth.verify_access_token(access_token)
+            if not user_info:
+                logger.warning(f"Недействительный JWT токен для сессии {session_id}")
+                # Если токен недействителен, перенаправляем на страницу логина
+                if request.url.path.startswith('/api/'):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Токен доступа недействителен"
+                    )
+                else:
+                    return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
         
-        # Продолжаем выполнение запроса
+        # Добавляем информацию о пользователе в request state
+        request.state.user_info = session_data.get('user_info', {})
+        request.state.session_id = session_id
+        
+        # Продолжаем обработку запроса
         response = await call_next(request)
         return response
-    
+
+# ============================================================================
+# СЛУЖЕБНЫЕ ФУНКЦИИ
+# ============================================================================
+
     def _is_excluded_path(self, path: str) -> bool:
-        """
-        Проверяет, исключен ли путь из проверки авторизации
-        """
+        """Проверяет, исключен ли путь из проверки авторизации"""
+        # Проверяем точное совпадение
+        if path in self.excluded_paths:
+            return True
+        
+        # Проверяем пути, начинающиеся с исключенными префиксами
         for excluded_path in self.excluded_paths:
             if path.startswith(excluded_path):
                 return True
+        
         return False
+    
+    def _is_admin_path(self, path: str) -> bool:
+        """Проверяет, является ли путь админским"""
+        return path.startswith('/admin') or path.startswith('/api/admin')
+    
+    def _is_api_path(self, path: str) -> bool:
+        """Проверяет, является ли путь API"""
+        return path.startswith('/api/')
+    
+    def _is_static_path(self, path: str) -> bool:
+        """Проверяет, является ли путь статическим"""
+        return path.startswith('/static') or path.endswith('.ico') or path.endswith('.css') or path.endswith('.js')
+    
+    def _is_documentation_path(self, path: str) -> bool:
+        """Проверяет, является ли путь документацией"""
+        return path in ['/docs', '/redoc', '/openapi.json']
+    
+    def _is_auth_path(self, path: str) -> bool:
+        """Проверяет, является ли путь аутентификационным"""
+        return path.startswith('/api/auth/') or path in ['/login', '/logout']
+    
+    def _should_redirect_to_login(self, path: str) -> bool:
+        """Определяет, нужно ли перенаправлять на страницу логина"""
+        return not (self._is_static_path(path) or 
+                   self._is_documentation_path(path) or 
+                   self._is_auth_path(path) or 
+                   path == '/')
+    
+    def _should_return_401(self, path: str) -> bool:
+        """Определяет, нужно ли возвращать 401 для API"""
+        return self._is_api_path(path) and not self._is_auth_path(path)
 
-def get_current_user(request: Request) -> dict:
-    """
-    Получает текущего пользователя из request state
-    """
-    if not hasattr(request.state, 'user') or not request.state.user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Пользователь не аутентифицирован"
-        )
-    return request.state.user
+# ============================================================================
+# ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+# ============================================================================
 
-def require_groups(required_groups: list):
-    """
-    Декоратор для проверки принадлежности пользователя к определенным группам
-    """
-    def decorator(func):
-        async def wrapper(request: Request, *args, **kwargs):
-            user = get_current_user(request)
-            ad_auth = ADAuthenticator()
-            
-            if not ad_auth.check_user_permissions(user, required_groups):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Недостаточно прав. Требуются группы: {', '.join(required_groups)}"
-                )
-            
-            return await func(request, *args, **kwargs)
-        return wrapper
-    return decorator
+# Глобальный экземпляр middleware (создается при инициализации приложения)
+auth_middleware = None

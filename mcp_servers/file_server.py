@@ -9,6 +9,17 @@ class FileMCPServer(BaseMCPServer):
     def __init__(self):
         super().__init__()
         self.description = "Файловая система - чтение, запись и управление файлами"
+        
+        # Настройки для админ-панели
+        self.display_name = "File MCP"
+        self.icon = "fas fa-folder"
+        self.category = "mcp_servers"
+        self.admin_fields = [
+            { 'key': 'base_path', 'label': 'Базовый путь', 'type': 'text', 'placeholder': '/path/to/files' },
+            { 'key': 'allowed_extensions', 'label': 'Разрешенные расширения', 'type': 'text', 'placeholder': 'txt,md,py,js,html,css' },
+            { 'key': 'max_file_size', 'label': 'Максимальный размер файла (MB)', 'type': 'number', 'placeholder': '10' },
+            { 'key': 'enabled', 'label': 'Включен', 'type': 'checkbox' }
+        ]
         self.tools = [
             {
                 "name": "read_file",

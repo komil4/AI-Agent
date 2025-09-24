@@ -1,907 +1,821 @@
+#!/usr/bin/env python3
+"""
+MCP сервер для работы с GitLab с использованием стандарта Anthropic
+"""
+
+# ============================================================================
+# ИНИЦИАЛИЗАЦИЯ МОДУЛЯ
+# ============================================================================
+
 import os
 import gitlab
-from typing import Dict, Any, List
-from config.config_manager import ConfigManager
-from . import BaseMCPServer
+import logging
+from typing import Dict, Any, List, Optional
+from datetime import datetime
+from .base_fastmcp_server import BaseFastMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
 
-class GitLabMCPServer(BaseMCPServer):
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# ПРОГРАММНЫЙ ИНТЕРФЕЙС (API)
+# ============================================================================
+
+class GitLabFastMCPServer(BaseFastMCPServer):
     """MCP сервер для работы с GitLab - управление репозиториями, проектами, merge requests и коммитами"""
     
     def __init__(self):
-        super().__init__()
-        self.description = "GitLab - управление репозиториями, проектами, merge requests и коммитами"
-        self.tools = [
-            {
-                "name": "list_projects",
-                "description": "Получает список проектов GitLab",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "search": {"type": "string", "description": "Поисковый запрос"},
-                        "per_page": {"type": "integer", "description": "Количество результатов на странице"}
-                    }
-                }
-            },
-            {
-                "name": "get_project_commits",
-                "description": "Получает коммиты проекта",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "project_name": {"type": "string", "description": "Название проекта"},
-                        "project_id": {"type": "string", "description": "ID проекта"},
-                        "per_page": {"type": "integer", "description": "Количество коммитов"},
-                        "author_email": {"type": "string", "description": "Email автора для фильтрации"}
-                    }
-                }
-            },
-            {
-                "name": "create_merge_request",
-                "description": "Создает merge request в GitLab",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "project_name": {"type": "string", "description": "Название проекта"},
-                        "project_id": {"type": "string", "description": "ID проекта"},
-                        "title": {"type": "string", "description": "Заголовок merge request"},
-                        "description": {"type": "string", "description": "Описание merge request"},
-                        "source_branch": {"type": "string", "description": "Исходная ветка"},
-                        "target_branch": {"type": "string", "description": "Целевая ветка"}
-                    },
-                    "required": ["title", "source_branch", "target_branch"]
-                }
-            }
-        ]
-        self.config_manager = ConfigManager()
+        """Инициализация GitLab MCP сервера"""
+        super().__init__("gitlab")
         self.gitlab_url = None
-        self.gitlab_token = None
-        self.gl = None
-        self._load_config()
-        self._connect()
+        self.access_token = None
+        self.gitlab = None
+        
+        # Настройки для админ-панели
+        self.display_name = "GitLab MCP"
+        self.icon = "fab fa-gitlab"
+        self.category = "mcp_servers"
+        self.admin_fields = [
+            { 'key': 'url', 'label': 'URL GitLab', 'type': 'text', 'placeholder': 'https://gitlab.com' },
+            { 'key': 'access_token', 'label': 'Access Token', 'type': 'password', 'placeholder': 'ваш access token' },
+            { 'key': 'project_id', 'label': 'ID проекта', 'type': 'text', 'placeholder': '12345' },
+            { 'key': 'enabled', 'label': 'Включен', 'type': 'checkbox' }
+        ]
+        
+        # Определяем инструменты в стандарте Anthropic
+        self.tools = [
+            create_tool_schema(
+                name="list_projects",
+                description="Получает список проектов GitLab с возможностью поиска и фильтрации",
+                parameters={
+                    "properties": {
+                        "search": {
+                            "type": "string",
+                            "description": "Поисковый запрос для фильтрации проектов"
+                        },
+                        "per_page": {
+                            "type": "integer",
+                            "description": "Количество результатов на странице (по умолчанию 20)",
+                            "minimum": 1,
+                            "maximum": 100
+                        },
+                        "visibility": {
+                            "type": "string",
+                            "description": "Видимость проектов",
+                            "enum": ["private", "internal", "public"]
+                        },
+                        "order_by": {
+                            "type": "string",
+                            "description": "Поле для сортировки",
+                            "enum": ["id", "name", "path", "created_at", "updated_at", "last_activity_at"]
+                        }
+                    }
+                }
+            ),
+            create_tool_schema(
+                name="get_project_details",
+                description="Получает детальную информацию о конкретном проекте GitLab",
+                parameters={
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "ID или путь проекта (например, 'group/project')"
+                        },
+                        "include_statistics": {
+                            "type": "boolean",
+                            "description": "Включать статистику проекта (коммиты, размер репозитория)"
+                        }
+                    },
+                    "required": ["project_id"]
+                }
+            ),
+            create_tool_schema(
+                name="get_project_commits",
+                description="Получает список коммитов проекта с возможностью фильтрации",
+                parameters={
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "ID или путь проекта"
+                        },
+                        "branch": {
+                            "type": "string",
+                            "description": "Ветка для получения коммитов (по умолчанию main/master)"
+                        },
+                        "per_page": {
+                            "type": "integer",
+                            "description": "Количество коммитов (по умолчанию 20)",
+                            "minimum": 1,
+                            "maximum": 100
+                        },
+                        "author_email": {
+                            "type": "string",
+                            "description": "Email автора для фильтрации коммитов"
+                        },
+                        "since": {
+                            "type": "string",
+                            "description": "Дата начала периода (ISO 8601)"
+                        },
+                        "until": {
+                            "type": "string",
+                            "description": "Дата окончания периода (ISO 8601)"
+                        }
+                    },
+                    "required": ["project_id"]
+                }
+            ),
+            create_tool_schema(
+                name="create_merge_request",
+                description="Создает новый merge request в GitLab",
+                parameters={
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "ID или путь проекта"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Заголовок merge request"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Описание merge request"
+                        },
+                        "source_branch": {
+                            "type": "string",
+                            "description": "Исходная ветка"
+                        },
+                        "target_branch": {
+                            "type": "string",
+                            "description": "Целевая ветка (по умолчанию main/master)"
+                        },
+                        "assignee_id": {
+                            "type": "integer",
+                            "description": "ID пользователя для назначения"
+                        },
+                        "reviewer_ids": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "description": "ID пользователей для ревью"
+                        },
+                        "labels": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Метки для merge request"
+                        }
+                    },
+                    "required": ["project_id", "title", "source_branch"]
+                }
+            ),
+            create_tool_schema(
+                name="list_merge_requests",
+                description="Получает список merge requests проекта",
+                parameters={
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "ID или путь проекта"
+                        },
+                        "state": {
+                            "type": "string",
+                            "description": "Состояние merge request",
+                            "enum": ["opened", "closed", "merged", "all"]
+                        },
+                        "per_page": {
+                            "type": "integer",
+                            "description": "Количество результатов (по умолчанию 20)",
+                            "minimum": 1,
+                            "maximum": 100
+                        },
+                        "author_id": {
+                            "type": "integer",
+                            "description": "ID автора для фильтрации"
+                        },
+                        "assignee_id": {
+                            "type": "integer",
+                            "description": "ID исполнителя для фильтрации"
+                        }
+                    },
+                    "required": ["project_id"]
+                }
+            ),
+            create_tool_schema(
+                name="get_merge_request_details",
+                description="Получает детальную информацию о merge request",
+                parameters={
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "ID или путь проекта"
+                        },
+                        "merge_request_iid": {
+                            "type": "integer",
+                            "description": "IID merge request"
+                        },
+                        "include_commits": {
+                            "type": "boolean",
+                            "description": "Включать список коммитов"
+                        },
+                        "include_changes": {
+                            "type": "boolean",
+                            "description": "Включать изменения файлов"
+                        }
+                    },
+                    "required": ["project_id", "merge_request_iid"]
+                }
+            ),
+            create_tool_schema(
+                name="update_merge_request",
+                description="Обновляет существующий merge request",
+                parameters={
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "ID или путь проекта"
+                        },
+                        "merge_request_iid": {
+                            "type": "integer",
+                            "description": "IID merge request"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Новый заголовок"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Новое описание"
+                        },
+                        "assignee_id": {
+                            "type": "integer",
+                            "description": "ID нового исполнителя"
+                        },
+                        "labels": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Новые метки"
+                        },
+                        "state_event": {
+                            "type": "string",
+                            "description": "Изменение состояния",
+                            "enum": ["close", "reopen"]
+                        }
+                    },
+                    "required": ["project_id", "merge_request_iid"]
+                }
+            ),
+            create_tool_schema(
+                name="list_branches",
+                description="Получает список веток проекта",
+                parameters={
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "ID или путь проекта"
+                        },
+                        "per_page": {
+                            "type": "integer",
+                            "description": "Количество результатов (по умолчанию 20)",
+                            "minimum": 1,
+                            "maximum": 100
+                        }
+                    },
+                    "required": ["project_id"]
+                }
+            ),
+            create_tool_schema(
+                name="create_branch",
+                description="Создает новую ветку в проекте",
+                parameters={
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "ID или путь проекта"
+                        },
+                        "branch_name": {
+                            "type": "string",
+                            "description": "Название новой ветки"
+                        },
+                        "ref": {
+                            "type": "string",
+                            "description": "Базовая ветка или коммит (по умолчанию main/master)"
+                        }
+                    },
+                    "required": ["project_id", "branch_name"]
+                }
+            ),
+            create_tool_schema(
+                name="get_file_content",
+                description="Получает содержимое файла из репозитория",
+                parameters={
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "ID или путь проекта"
+                        },
+                        "file_path": {
+                            "type": "string",
+                            "description": "Путь к файлу в репозитории"
+                        },
+                        "ref": {
+                            "type": "string",
+                            "description": "Ветка или коммит (по умолчанию main/master)"
+                        }
+                    },
+                    "required": ["project_id", "file_path"]
+                }
+            )
+        ]
+    
+    def _get_description(self) -> str:
+        """Возвращает описание сервера"""
+        return "GitLab MCP сервер - управление репозиториями, проектами, merge requests и коммитами в GitLab"
     
     def _load_config(self):
         """Загружает конфигурацию GitLab"""
         gitlab_config = self.config_manager.get_service_config('gitlab')
         self.gitlab_url = gitlab_config.get('url', '')
-        self.gitlab_token = gitlab_config.get('token', '')
+        self.access_token = gitlab_config.get('token', '')
     
     def _connect(self):
         """Подключение к GitLab"""
         try:
             gitlab_config = self.config_manager.get_service_config('gitlab')
             if not gitlab_config.get('enabled', False):
-                print("⚠️ GitLab отключен в конфигурации")
+                logger.info("ℹ️ GitLab отключен в конфигурации")
                 return
-                
-            if self.gitlab_url and self.gitlab_token:
-                self.gl = gitlab.Gitlab(self.gitlab_url, private_token=self.gitlab_token)
-                self.gl.auth()
-                print("✅ Подключение к GitLab успешно")
-            else:
-                print("⚠️ GitLab не настроен - отсутствуют данные в конфигурации")
-        except Exception as e:
-            print(f"❌ Ошибка подключения к GitLab: {e}")
-    
-    def reconnect(self):
-        """Переподключается к GitLab с новой конфигурацией"""
-        self._load_config()
-        self._connect()
-    
-    def process_command(self, message: str) -> str:
-        """Обрабатывает команды для GitLab (упрощенный метод)"""
-        if not self.gl:
-            return "❌ GitLab не настроен. Проверьте переменные окружения."
-        
-        try:
-            return self._process_command_legacy(message)
-        except Exception as e:
-            return f"❌ Ошибка при работе с GitLab: {str(e)}"
-    
-    def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Вызывает инструмент GitLab по имени"""
-        if not self.gl:
-            return {"error": "GitLab не настроен"}
-        
-        try:
-            if tool_name == "list_projects":
-                return self._list_projects_tool(arguments)
-            elif tool_name == "get_project_commits":
-                return self._get_project_commits_tool(arguments)
-            elif tool_name == "create_merge_request":
-                return self._create_merge_request_tool(arguments)
-            elif tool_name == "get_project_branches":
-                return self._get_project_branches_tool(arguments)
-            elif tool_name == "search_commits_by_task":
-                return self._search_commits_by_task_tool(arguments)
-            else:
-                return {"error": f"Неизвестный инструмент: {tool_name}"}
-        except Exception as e:
-            return {"error": str(e)}
-    
-    def _process_command_legacy(self, message: str) -> str:
-        """Обрабатывает команды для GitLab (старый метод)"""
-        if not self.gl:
-            return "❌ GitLab не настроен. Проверьте переменные окружения."
-        
-        message_lower = message.lower()
-        
-        try:
-            if any(word in message_lower for word in ['создать', 'новая', 'создай', 'проект']):
-                return self._create_project(message)
-            elif any(word in message_lower for word in ['найти', 'поиск', 'найди', 'репозиторий']):
-                return self._search_projects(message)
-            elif any(word in message_lower for word in ['список', 'все', 'показать', 'проекты']):
-                return self._list_projects()
-            elif any(word in message_lower for word in ['коммит', 'commit', 'изменения']):
-                return self._get_commits(message)
-            elif any(word in message_lower for word in ['ветка', 'branch', 'ветки']):
-                return self._get_branches(message)
-            elif any(word in message_lower for word in ['merge', 'мерж', 'слить']):
-                return self._create_merge_request(message)
-            else:
-                return self._get_help()
-        except Exception as e:
-            return f"❌ Ошибка при работе с GitLab: {str(e)}"
-    
-    def process_command_intelligent(self, message: str, intent_result, user_context: dict = None) -> str:
-        """Обрабатывает команды для GitLab на основе анализа намерений"""
-        if not self.gl:
-            return "❌ GitLab не настроен. Проверьте переменные окружения."
-        
-        try:
-            # Временная заглушка для intent_analyzer
-            class IntentType:
-                GITLAB_PROJECTS = "gitlab_projects"
-                GITLAB_COMMITS = "gitlab_commits"
-                GITLAB_MY_COMMITS = "gitlab_my_commits"
-                GITLAB_TASK_COMMITS = "gitlab_task_commits"
-                GITLAB_MERGE = "gitlab_merge"
             
-            # Обрабатываем на основе намерения
-            if intent_result.intent == IntentType.GITLAB_PROJECTS:
-                return self._list_projects_intelligent(message, intent_result)
-            elif intent_result.intent == IntentType.GITLAB_COMMITS:
-                return self._get_commits_intelligent(message, intent_result)
-            elif intent_result.intent == IntentType.GITLAB_MY_COMMITS:
-                return self._get_my_commits_intelligent(message, intent_result, user_context)
-            elif intent_result.intent == IntentType.GITLAB_TASK_COMMITS:
-                return self._get_task_commits_intelligent(message, intent_result, user_context)
-            elif intent_result.intent == IntentType.GITLAB_MERGE:
-                return self._create_merge_request_intelligent(message, intent_result)
-            else:
-                # Fallback к старому методу
-                return self.process_command(message)
-        except Exception as e:
-            return f"❌ Ошибка при работе с GitLab: {str(e)}"
-    
-    def _create_project(self, message: str) -> str:
-        """Создает новый проект в GitLab"""
-        try:
-            # Извлекаем название проекта из сообщения
-            project_name = "new-project"
-            if 'название' in message.lower():
-                parts = message.split('название')
-                if len(parts) > 1:
-                    project_name = parts[1].strip().strip('"').strip("'")
-            elif 'проект' in message.lower():
-                parts = message.split('проект')
-                if len(parts) > 1:
-                    project_name = parts[1].strip().strip('"').strip("'")
+            if not all([self.gitlab_url, self.access_token]):
+                logger.warning("⚠️ Неполная конфигурация GitLab")
+                return
             
-            project_data = {
-                'name': project_name,
-                'description': f'Проект создан из чат-бота: {message}',
-                'visibility': 'private'
+            # Подключение к GitLab
+            self.gitlab = gitlab.Gitlab(self.gitlab_url, private_token=self.access_token)
+            self.gitlab.auth()
+            
+            logger.info(f"✅ Подключение к GitLab успешно: {self.gitlab_url}")
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка подключения к GitLab: {e}")
+            self.gitlab = None
+    
+    def _test_connection(self) -> bool:
+        """Тестирует подключение к GitLab"""
+        if not self.gitlab:
+            return False
+        
+        try:
+            self.gitlab.auth()
+            return True
+        except Exception:
+            return False
+    
+    # ============================================================================
+    # ИНСТРУМЕНТЫ GITLAB
+    # ============================================================================
+    
+    def list_projects(self, search: str = None, per_page: int = 20, visibility: str = None,
+                     order_by: str = "last_activity_at") -> Dict[str, Any]:
+        """Получает список проектов GitLab"""
+        try:
+            if not self.gitlab:
+                return format_tool_response(False, "GitLab не подключен")
+            
+            # Параметры поиска
+            params = {
+                'per_page': per_page,
+                'order_by': order_by
             }
-            
-            project = self.gl.projects.create(project_data)
-            return f"✅ Создан проект: {project.name}\n🔗 URL: {project.web_url}"
-        except Exception as e:
-            return f"❌ Ошибка создания проекта: {str(e)}"
-    
-    def _search_projects(self, message: str) -> str:
-        """Поиск проектов в GitLab"""
-        try:
-            projects = self.gl.projects.list(search=message, per_page=5)
-            
-            if not projects:
-                return "🔍 Проекты не найдены"
-            
-            result = "🔍 Найденные проекты:\n"
-            for project in projects:
-                result += f"• {project.name}\n  📝 {project.description or 'Без описания'}\n  🔗 {project.web_url}\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка поиска: {str(e)}"
-    
-    def _list_projects(self) -> str:
-        """Список последних проектов"""
-        try:
-            projects = self.gl.projects.list(per_page=10, order_by='last_activity_at')
-            
-            if not projects:
-                return "📋 Проектов не найдено"
-            
-            result = "📋 Последние проекты:\n"
-            for project in projects:
-                result += f"• {project.name}\n  📝 {project.description or 'Без описания'}\n  🔗 {project.web_url}\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка получения списка: {str(e)}"
-    
-    def _get_commits(self, message: str) -> str:
-        """Получает коммиты проекта"""
-        try:
-            # Извлекаем название проекта из сообщения
-            project_name = None
-            words = message.split()
-            for i, word in enumerate(words):
-                if word.lower() in ['проект', 'репозиторий'] and i + 1 < len(words):
-                    project_name = words[i + 1]
-                    break
-            
-            if not project_name:
-                return "❌ Не указано название проекта"
-            
-            # Находим проект
-            projects = self.gl.projects.list(search=project_name)
-            if not projects:
-                return f"❌ Проект '{project_name}' не найден"
-            
-            project = projects[0]
-            commits = project.commits.list(per_page=5)
-            
-            if not commits:
-                return f"📝 В проекте {project.name} нет коммитов"
-            
-            result = f"📝 Последние коммиты в проекте {project.name}:\n"
-            for commit in commits:
-                result += f"• {commit.short_id}: {commit.title}\n  👤 {commit.author_name}\n  📅 {commit.created_at}\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка получения коммитов: {str(e)}"
-    
-    def _get_branches(self, message: str) -> str:
-        """Получает ветки проекта"""
-        try:
-            # Извлекаем название проекта из сообщения
-            project_name = None
-            words = message.split()
-            for i, word in enumerate(words):
-                if word.lower() in ['проект', 'репозиторий'] and i + 1 < len(words):
-                    project_name = words[i + 1]
-                    break
-            
-            if not project_name:
-                return "❌ Не указано название проекта"
-            
-            # Находим проект
-            projects = self.gl.projects.list(search=project_name)
-            if not projects:
-                return f"❌ Проект '{project_name}' не найден"
-            
-            project = projects[0]
-            branches = project.branches.list(per_page=10)
-            
-            if not branches:
-                return f"🌿 В проекте {project.name} нет веток"
-            
-            result = f"🌿 Ветки в проекте {project.name}:\n"
-            for branch in branches:
-                result += f"• {branch.name}\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка получения веток: {str(e)}"
-    
-    def _create_merge_request(self, message: str) -> str:
-        """Создает merge request"""
-        try:
-            # Простое извлечение данных из сообщения
-            project_name = "test-project"  # Замените на ваш проект
-            source_branch = "feature-branch"
-            target_branch = "main"
-            
-            # Находим проект
-            projects = self.gl.projects.list(search=project_name)
-            if not projects:
-                return f"❌ Проект '{project_name}' не найден"
-            
-            project = projects[0]
-            
-            mr_data = {
-                'source_branch': source_branch,
-                'target_branch': target_branch,
-                'title': 'Merge Request из чат-бота',
-                'description': f'Создан из чат-бота: {message}'
-            }
-            
-            mr = project.mergerequests.create(mr_data)
-            return f"✅ Создан Merge Request: {mr.title}\n🔗 URL: {mr.web_url}"
-        except Exception as e:
-            return f"❌ Ошибка создания Merge Request: {str(e)}"
-    
-    def _get_help(self) -> str:
-        """Справка по командам GitLab"""
-        return """
-🔧 Команды для работы с GitLab:
-
-• Создать проект: "создай проект в gitlab"
-• Найти проекты: "найди проекты по ключевому слову"
-• Список проектов: "покажи все проекты"
-• Коммиты проекта: "покажи коммиты проекта название"
-• Мои коммиты: "мои коммиты проекта название"
-• Коммиты по задаче: "коммиты по задаче #PROJ-123"
-• Ветки проекта: "покажи ветки проекта название"
-• Создать MR: "создай merge request"
-
-Примеры:
-- "создай проект с названием 'мой-новый-проект'"
-- "найди все проекты связанные с API"
-- "покажи коммиты проекта my-project"
-- "мои коммиты проекта my-project"
-- "коммиты по задаче #PROJ-123"
-- "покажи ветки проекта my-project"
-        """
-    
-    def _list_projects_intelligent(self, message: str, intent_result) -> str:
-        """Список проектов GitLab на основе анализа намерений"""
-        try:
-            entities = intent_result.entities
-            search_query = entities.get('search_query', '')
-            
-            # Определяем количество проектов из сообщения
-            import re
-            count_match = re.search(r'(\d+)', message)
-            per_page = int(count_match.group(1)) if count_match else 10
-            
-            if search_query:
-                # Поиск проектов по запросу
-                projects = self.gl.projects.list(search=search_query, per_page=per_page)
-                if not projects:
-                    return f"🔍 Проекты по запросу '{search_query}' не найдены"
-                
-                result = f"🔍 Найденные проекты по запросу '{search_query}':\n\n"
-            else:
-                # Список последних проектов
-                projects = self.gl.projects.list(per_page=per_page, order_by='last_activity_at')
-                if not projects:
-                    return "📋 Проектов не найдено"
-                
-                result = f"📋 Последние {len(projects)} проектов:\n\n"
-            
-            for project in projects:
-                result += f"• **{project.name}**\n"
-                result += f"  📝 {project.description or 'Без описания'}\n"
-                result += f"  🔗 {project.web_url}\n"
-                result += f"  📅 Последняя активность: {project.last_activity_at[:10]}\n\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка получения проектов: {str(e)}"
-    
-    def _get_commits_intelligent(self, message: str, intent_result) -> str:
-        """Получает коммиты проекта на основе анализа намерений"""
-        try:
-            entities = intent_result.entities
-            project_name = entities.get('project_name', '')
-            
-            # Если не указан проект, пытаемся найти в сообщении
-            if not project_name:
-                import re
-                # Ищем название проекта в сообщении
-                words = message.split()
-                for i, word in enumerate(words):
-                    if word.lower() in ['проект', 'репозиторий', 'repo'] and i + 1 < len(words):
-                        project_name = words[i + 1]
-                        break
-            
-            if not project_name:
-                return "❌ Не указано название проекта. Пример: 'покажи коммиты проекта my-project'"
-            
-            # Находим проект
-            projects = self.gl.projects.list(search=project_name)
-            if not projects:
-                return f"❌ Проект '{project_name}' не найден"
-            
-            project = projects[0]
-            
-            # Определяем количество коммитов
-            import re
-            count_match = re.search(r'(\d+)', message)
-            per_page = int(count_match.group(1)) if count_match else 5
-            
-            commits = project.commits.list(per_page=per_page)
-            
-            if not commits:
-                return f"📝 В проекте {project.name} нет коммитов"
-            
-            result = f"📝 Последние {len(commits)} коммитов в проекте **{project.name}**:\n\n"
-            for commit in commits:
-                result += f"• **{commit.short_id}**: {commit.title}\n"
-                result += f"  👤 Автор: {commit.author_name}\n"
-                result += f"  📅 Дата: {commit.created_at[:10]}\n"
-                result += f"  🔗 [Посмотреть коммит]({project.web_url}/-/commit/{commit.id})\n\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка получения коммитов: {str(e)}"
-    
-    def _create_merge_request_intelligent(self, message: str, intent_result) -> str:
-        """Создает merge request на основе анализа намерений"""
-        try:
-            entities = intent_result.entities
-            project_name = entities.get('project_name', '')
-            
-            # Если не указан проект, используем первый доступный
-            if not project_name:
-                projects = self.gl.projects.list(per_page=1)
-                if not projects:
-                    return "❌ Нет доступных проектов для создания Merge Request"
-                project = projects[0]
-            else:
-                projects = self.gl.projects.list(search=project_name)
-                if not projects:
-                    return f"❌ Проект '{project_name}' не найден"
-                project = projects[0]
-            
-            # Извлекаем информацию о ветках из сообщения
-            import re
-            source_branch = "feature-branch"
-            target_branch = "main"
-            
-            # Ищем упоминания веток в сообщении
-            branch_match = re.search(r'из\s+ветки\s+(\w+)', message, re.IGNORECASE)
-            if branch_match:
-                source_branch = branch_match.group(1)
-            
-            branch_match = re.search(r'в\s+ветку\s+(\w+)', message, re.IGNORECASE)
-            if branch_match:
-                target_branch = branch_match.group(1)
-            
-            # Создаем описание на основе сообщения
-            description = f"Merge Request создан из чат-бота\n\nИсходное сообщение: {message}"
-            
-            mr_data = {
-                'source_branch': source_branch,
-                'target_branch': target_branch,
-                'title': f'MR из чат-бота: {message[:50]}...',
-                'description': description
-            }
-            
-            mr = project.mergerequests.create(mr_data)
-            return f"✅ Создан Merge Request: **{mr.title}**\n\n🔗 [Открыть MR]({mr.web_url})\n📋 Проект: {project.name}\n🌿 Из ветки: {source_branch} → {target_branch}"
-        except Exception as e:
-            return f"❌ Ошибка создания Merge Request: {str(e)}"
-    
-    def _get_my_commits_intelligent(self, message: str, intent_result, user_context: dict = None) -> str:
-        """Получает мои коммиты в проекте на основе анализа намерений"""
-        try:
-            entities = intent_result.entities
-            project_name = entities.get('my_project_name', '')
-            
-            # Если не указан проект, пытаемся найти в сообщении
-            if not project_name:
-                import re
-                # Ищем название проекта в сообщении
-                words = message.split()
-                for i, word in enumerate(words):
-                    if word.lower() in ['проект', 'репозиторий', 'repo'] and i + 1 < len(words):
-                        project_name = words[i + 1]
-                        break
-            
-            if not project_name:
-                return "❌ Не указано название проекта. Пример: 'мои коммиты проекта my-project'"
-            
-            # Находим проект
-            projects = self.gl.projects.list(search=project_name)
-            if not projects:
-                return f"❌ Проект '{project_name}' не найден"
-            
-            project = projects[0]
-            
-            # Получаем email пользователя из контекста приложения
-            user_email = None
-            if user_context and isinstance(user_context, dict):
-                user_info = user_context.get('user', {})
-                user_email = user_info.get('email')
-            
-            # Если не нашли email в контексте, пытаемся получить из GitLab
-            if not user_email:
-                try:
-                    current_user = self.gl.user
-                    if current_user and hasattr(current_user, 'email'):
-                        user_email = current_user.email
-                except:
-                    pass
-            
-            if not user_email:
-                return "❌ Не удалось определить email пользователя для поиска коммитов"
-            
-            # Определяем количество коммитов
-            import re
-            count_match = re.search(r'(\d+)', message)
-            per_page = int(count_match.group(1)) if count_match else 10
-            
-            # Получаем коммиты пользователя по email
-            # Фильтр по author_email не работает в некоторых версиях python-gitlab/GitLab API.
-            # Поэтому фильтруем вручную по email после получения коммитов.
-            commits = project.commits.list(
-                per_page=100,  # Получаем больше, чтобы потом отфильтровать
-                order_by='created_at',
-                sort='desc'
-            )
-            # Фильтруем коммиты по email автора
-            filtered_commits = []
-            for commit in commits:
-                # Иногда author_email может отсутствовать, поэтому используем get
-                if hasattr(commit, 'author_email') and commit.author_email == user_email:
-                    filtered_commits.append(commit)
-                # Если набрали нужное количество, останавливаемся
-                if len(filtered_commits) >= per_page:
-                    break
-            commits = filtered_commits
-            
-            if not commits:
-                return f"📝 В проекте {project.name} нет коммитов пользователя {user_email}"
-            
-            result = f"👤 Коммиты пользователя {user_email} в проекте **{project.name}**:\n\n"
-            for commit in commits:
-                result += f"• **{commit.short_id}**: {commit.title}\n"
-                result += f"  📅 Дата: {commit.created_at[:10]}\n"
-                result += f"  🔗 [Посмотреть коммит]({project.web_url}/-/commit/{commit.id})\n\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка получения коммитов пользователя: {str(e)}"
-    
-    def _get_task_commits_intelligent(self, message: str, intent_result, user_context: dict = None) -> str:
-        """Получает коммиты по задаче на основе анализа намерений"""
-        try:
-            entities = intent_result.entities
-            task_key = entities.get('task_key', '') or entities.get('task_number', '')
-            
-            # Если не указан номер задачи, пытаемся найти в сообщении
-            if not task_key:
-                import re
-                # Ищем номер задачи в сообщении
-                task_match = re.search(r'#?([A-Z]+-\d+)', message)
-                if task_match:
-                    task_key = task_match.group(1)
-                else:
-                    return "❌ Не указан номер задачи. Пример: 'коммиты по задаче #PROJ-123'"
-            
-            # Определяем количество коммитов
-            import re
-            count_match = re.search(r'(\d+)', message)
-            per_page = int(count_match.group(1)) if count_match else 20
-            
-            # Ищем коммиты по всем проектам, которые содержат номер задачи в сообщении
-            all_commits = []
-            
-            # Получаем все проекты пользователя
-            projects = self.gl.projects.list(per_page=100, membership=True)
-            
-            for project in projects:
-                try:
-                    # Ищем коммиты, содержащие номер задачи в сообщении
-                    commits = project.commits.list(
-                        per_page=per_page,
-                        search=task_key,
-                        order_by='created_at',
-                        sort='desc'
-                    )
-                    
-                    for commit in commits:
-                        # Проверяем, что коммит действительно содержит номер задачи в начале сообщения
-                        if commit.title.startswith(task_key) or f" {task_key}" in commit.title:
-                            all_commits.append({
-                                'commit': commit,
-                                'project': project
-                            })
-                except Exception as e:
-                    # Пропускаем проекты с ошибками доступа
-                    continue
-            
-            if not all_commits:
-                return f"📝 Коммиты по задаче {task_key} не найдены"
-            
-            # Сортируем по дате создания
-            all_commits.sort(key=lambda x: x['commit'].created_at, reverse=True)
-            
-            # Ограничиваем количество результатов
-            all_commits = all_commits[:per_page]
-            
-            result = f"🎯 Коммиты по задаче **{task_key}**:\n\n"
-            for item in all_commits:
-                commit = item['commit']
-                project = item['project']
-                
-                result += f"• **{commit.short_id}**: {commit.title}\n"
-                result += f"  📁 Проект: {project.name}\n"
-                result += f"  👤 Автор: {commit.author_name}\n"
-                result += f"  📅 Дата: {commit.created_at[:10]}\n"
-                result += f"  🔗 [Посмотреть коммит]({project.web_url}/-/commit/{commit.id})\n\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка поиска коммитов по задаче: {str(e)}"
-    
-    def _list_projects_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Получает список проектов через инструмент"""
-        try:
-            search = arguments.get('search', '')
-            per_page = arguments.get('per_page', 10)
             
             if search:
-                projects = self.gl.projects.list(search=search, per_page=per_page)
-            else:
-                projects = self.gl.projects.list(per_page=per_page, order_by='last_activity_at')
+                params['search'] = search
+            if visibility:
+                params['visibility'] = visibility
             
-            result = []
+            # Получаем проекты
+            projects = self.gitlab.projects.list(**params)
+            
+            # Форматируем результаты
+            project_list = []
             for project in projects:
-                result.append({
-                    'id': project.id,
-                    'name': project.name,
-                    'description': project.description or 'Без описания',
-                    'web_url': project.web_url,
-                    'last_activity_at': project.last_activity_at,
-                    'visibility': project.visibility
-                })
+                project_data = {
+                    "id": project.id,
+                    "name": project.name,
+                    "path": project.path,
+                    "full_path": project.path_with_namespace,
+                    "description": project.description,
+                    "visibility": project.visibility,
+                    "created_at": project.created_at,
+                    "last_activity_at": project.last_activity_at,
+                    "web_url": project.web_url
+                }
+                project_list.append(project_data)
             
-            return {'projects': result}
+            logger.info(f"✅ Получен список проектов: {len(project_list)}")
+            return format_tool_response(True, f"Получен список проектов", project_list)
+            
         except Exception as e:
-            return {'error': str(e)}
+            logger.error(f"❌ Ошибка получения списка проектов: {e}")
+            return format_tool_response(False, f"Ошибка получения списка проектов: {str(e)}")
     
-    def _get_project_commits_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Получает коммиты проекта через инструмент"""
+    def get_project_details(self, project_id: str, include_statistics: bool = False) -> Dict[str, Any]:
+        """Получает детальную информацию о проекте"""
         try:
-            project_id = arguments.get('project_id') or arguments.get('id')
-            project_name = arguments.get('project_name') or arguments.get('name') or arguments.get('project')
-            per_page = arguments.get('per_page', 5)
-            author_email = arguments.get('author_email')
+            if not self.gitlab:
+                return format_tool_response(False, "GitLab не подключен")
             
-            if not project_name and not project_id:
-                return {'error': 'Не указано название проекта или ID проекта'}
+            # Получаем проект
+            project = self.gitlab.projects.get(project_id)
             
-            # Получаем проект по ID или по названию
-            if project_id:
+            # Базовые данные
+            project_data = {
+                "id": project.id,
+                "name": project.name,
+                "path": project.path,
+                "full_path": project.path_with_namespace,
+                "description": project.description,
+                "visibility": project.visibility,
+                "created_at": project.created_at,
+                "last_activity_at": project.last_activity_at,
+                "web_url": project.web_url,
+                "ssh_url": project.ssh_url_to_repo,
+                "http_url": project.http_url_to_repo
+            }
+            
+            # Статистика
+            if include_statistics:
                 try:
-                    project = self.gl.projects.get(project_id)
-                except Exception as e:
-                    return {'error': f'Проект с ID "{project_id}" не найден: {str(e)}'}
-            else:
-                # Находим проект по названию
-                projects = self.gl.projects.list(search=project_name)
-                if not projects:
-                    return {'error': f'Проект "{project_name}" не найден'}
-                project = projects[0]
+                    stats = project.statistics.get()
+                    project_data["statistics"] = {
+                        "commit_count": stats.commit_count,
+                        "repository_size": stats.repository_size,
+                        "lfs_objects_size": stats.lfs_objects_size,
+                        "build_artifacts_size": stats.build_artifacts_size
+                    }
+                except Exception:
+                    project_data["statistics"] = "Недоступно"
+            
+            logger.info(f"✅ Получены детали проекта: {project_id}")
+            return format_tool_response(True, "Детали проекта получены", project_data)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения деталей проекта: {e}")
+            return format_tool_response(False, f"Ошибка получения деталей проекта: {str(e)}")
+    
+    def get_project_commits(self, project_id: str, branch: str = None, per_page: int = 20,
+                           author_email: str = None, since: str = None, until: str = None) -> Dict[str, Any]:
+        """Получает список коммитов проекта"""
+        try:
+            if not self.gitlab:
+                return format_tool_response(False, "GitLab не подключен")
+            
+            # Получаем проект
+            project = self.gitlab.projects.get(project_id)
+            
+            # Параметры для получения коммитов
+            params = {'per_page': per_page}
+            
+            if branch:
+                params['ref_name'] = branch
+            if author_email:
+                params['author_email'] = author_email
+            if since:
+                params['since'] = since
+            if until:
+                params['until'] = until
             
             # Получаем коммиты
-            commits = project.commits.list(per_page=per_page)
+            commits = project.commits.list(**params)
             
-            result = []
+            # Форматируем результаты
+            commit_list = []
             for commit in commits:
-                # Фильтруем по email автора если указан
-                if author_email and hasattr(commit, 'author_email') and commit.author_email != author_email:
-                    continue
-                
-                result.append({
-                    'id': commit.id,
-                    'short_id': commit.short_id,
-                    'title': commit.title,
-                    'message': commit.message,
-                    'author_name': commit.author_name,
-                    'author_email': getattr(commit, 'author_email', ''),
-                    'created_at': commit.created_at,
-                    'web_url': f"{project.web_url}/-/commit/{commit.id}"
-                })
+                commit_data = {
+                    "id": commit.id,
+                    "short_id": commit.short_id,
+                    "title": commit.title,
+                    "message": commit.message,
+                    "author_name": commit.author_name,
+                    "author_email": commit.author_email,
+                    "committer_name": commit.committer_name,
+                    "committer_email": commit.committer_email,
+                    "created_at": commit.created_at,
+                    "web_url": commit.web_url
+                }
+                commit_list.append(commit_data)
             
-            return {
-                'commits': result, 
-                'project_name': project.name,
-                'project_id': project.id,
-                'project_url': project.web_url
-            }
+            logger.info(f"✅ Получены коммиты проекта: {len(commit_list)}")
+            return format_tool_response(True, f"Получены коммиты проекта", commit_list)
+            
         except Exception as e:
-            return {'error': str(e)}
+            logger.error(f"❌ Ошибка получения коммитов: {e}")
+            return format_tool_response(False, f"Ошибка получения коммитов: {str(e)}")
     
-    def _create_merge_request_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Создает merge request через инструмент"""
+    def create_merge_request(self, project_id: str, title: str, source_branch: str,
+                            description: str = None, target_branch: str = None,
+                            assignee_id: int = None, reviewer_ids: List[int] = None,
+                            labels: List[str] = None) -> Dict[str, Any]:
+        """Создает новый merge request"""
         try:
-            project_name = arguments.get('project_name')
-            project_id = arguments.get('project_id')
-            source_branch = arguments.get('source_branch')
-            target_branch = arguments.get('target_branch')
-            title = arguments.get('title')
-            description = arguments.get('description', '')
+            if not self.gitlab:
+                return format_tool_response(False, "GitLab не подключен")
             
-            if not all([source_branch, target_branch, title]):
-                return {'error': 'Не указаны обязательные параметры: source_branch, target_branch, title'}
+            # Получаем проект
+            project = self.gitlab.projects.get(project_id)
             
-            if not project_name and not project_id:
-                return {'error': 'Не указано название проекта или ID проекта'}
-            
-            # Получаем проект по ID или по названию
-            if project_id:
-                try:
-                    project = self.gl.projects.get(project_id)
-                except Exception as e:
-                    return {'error': f'Проект с ID "{project_id}" не найден: {str(e)}'}
-            else:
-                # Находим проект по названию
-                projects = self.gl.projects.list(search=project_name)
-                if not projects:
-                    return {'error': f'Проект "{project_name}" не найден'}
-                project = projects[0]
-            
-            # Создаем MR
+            # Параметры для создания MR
             mr_data = {
                 'source_branch': source_branch,
-                'target_branch': target_branch,
-                'title': title,
-                'description': description
+                'target_branch': target_branch or 'main',
+                'title': title
             }
             
+            if description:
+                mr_data['description'] = description
+            if assignee_id:
+                mr_data['assignee_id'] = assignee_id
+            if reviewer_ids:
+                mr_data['reviewer_ids'] = reviewer_ids
+            if labels:
+                mr_data['labels'] = labels
+            
+            # Создаем merge request
             mr = project.mergerequests.create(mr_data)
             
-            return {
-                'success': True,
-                'id': mr.id,
-                'iid': mr.iid,
-                'title': mr.title,
-                'web_url': mr.web_url,
-                'source_branch': mr.source_branch,
-                'target_branch': mr.target_branch
-            }
+            logger.info(f"✅ Создан merge request: {mr.iid}")
+            return format_tool_response(
+                True,
+                f"Merge request #{mr.iid} создан успешно",
+                {
+                    "iid": mr.iid,
+                    "title": mr.title,
+                    "state": mr.state,
+                    "source_branch": mr.source_branch,
+                    "target_branch": mr.target_branch,
+                    "web_url": mr.web_url
+                }
+            )
+            
         except Exception as e:
-            return {'error': str(e)}
+            logger.error(f"❌ Ошибка создания merge request: {e}")
+            return format_tool_response(False, f"Ошибка создания merge request: {str(e)}")
     
-    def _get_project_branches_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Получает ветки проекта через инструмент"""
+    def list_merge_requests(self, project_id: str, state: str = "opened", per_page: int = 20,
+                           author_id: int = None, assignee_id: int = None) -> Dict[str, Any]:
+        """Получает список merge requests проекта"""
         try:
-            project_name = arguments.get('project_name')
+            if not self.gitlab:
+                return format_tool_response(False, "GitLab не подключен")
             
-            if not project_name:
-                return {'error': 'Не указано название проекта'}
+            # Получаем проект
+            project = self.gitlab.projects.get(project_id)
             
-            # Находим проект
-            projects = self.gl.projects.list(search=project_name)
-            if not projects:
-                return {'error': f'Проект "{project_name}" не найден'}
+            # Параметры для поиска MR
+            params = {
+                'state': state,
+                'per_page': per_page
+            }
             
-            project = projects[0]
+            if author_id:
+                params['author_id'] = author_id
+            if assignee_id:
+                params['assignee_id'] = assignee_id
+            
+            # Получаем merge requests
+            mrs = project.mergerequests.list(**params)
+            
+            # Форматируем результаты
+            mr_list = []
+            for mr in mrs:
+                mr_data = {
+                    "iid": mr.iid,
+                    "title": mr.title,
+                    "description": mr.description,
+                    "state": mr.state,
+                    "source_branch": mr.source_branch,
+                    "target_branch": mr.target_branch,
+                    "author": mr.author['name'] if mr.author else None,
+                    "assignee": mr.assignee['name'] if mr.assignee else None,
+                    "created_at": mr.created_at,
+                    "updated_at": mr.updated_at,
+                    "web_url": mr.web_url
+                }
+                mr_list.append(mr_data)
+            
+            logger.info(f"✅ Получены merge requests: {len(mr_list)}")
+            return format_tool_response(True, f"Получены merge requests", mr_list)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения merge requests: {e}")
+            return format_tool_response(False, f"Ошибка получения merge requests: {str(e)}")
+    
+    def get_merge_request_details(self, project_id: str, merge_request_iid: int,
+                                 include_commits: bool = False, include_changes: bool = False) -> Dict[str, Any]:
+        """Получает детальную информацию о merge request"""
+        try:
+            if not self.gitlab:
+                return format_tool_response(False, "GitLab не подключен")
+            
+            # Получаем проект
+            project = self.gitlab.projects.get(project_id)
+            
+            # Получаем merge request
+            mr = project.mergerequests.get(merge_request_iid)
+            
+            # Базовые данные
+            mr_data = {
+                "iid": mr.iid,
+                "title": mr.title,
+                "description": mr.description,
+                "state": mr.state,
+                "source_branch": mr.source_branch,
+                "target_branch": mr.target_branch,
+                "author": mr.author['name'] if mr.author else None,
+                "assignee": mr.assignee['name'] if mr.assignee else None,
+                "created_at": mr.created_at,
+                "updated_at": mr.updated_at,
+                "web_url": mr.web_url,
+                "labels": mr.labels
+            }
+            
+            # Коммиты
+            if include_commits:
+                try:
+                    commits = mr.commits()
+                    mr_data["commits"] = [
+                        {
+                            "id": commit['id'],
+                            "title": commit['title'],
+                            "author_name": commit['author_name'],
+                            "created_at": commit['created_at']
+                        }
+                        for commit in commits
+                    ]
+                except Exception:
+                    mr_data["commits"] = "Недоступно"
+            
+            # Изменения
+            if include_changes:
+                try:
+                    changes = mr.changes()
+                    mr_data["changes"] = [
+                        {
+                            "old_path": change['old_path'],
+                            "new_path": change['new_path'],
+                            "diff": change['diff']
+                        }
+                        for change in changes['changes']
+                    ]
+                except Exception:
+                    mr_data["changes"] = "Недоступно"
+            
+            logger.info(f"✅ Получены детали merge request: {merge_request_iid}")
+            return format_tool_response(True, "Детали merge request получены", mr_data)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения деталей merge request: {e}")
+            return format_tool_response(False, f"Ошибка получения деталей merge request: {str(e)}")
+    
+    def update_merge_request(self, project_id: str, merge_request_iid: int, title: str = None,
+                            description: str = None, assignee_id: int = None,
+                            labels: List[str] = None, state_event: str = None) -> Dict[str, Any]:
+        """Обновляет существующий merge request"""
+        try:
+            if not self.gitlab:
+                return format_tool_response(False, "GitLab не подключен")
+            
+            # Получаем проект
+            project = self.gitlab.projects.get(project_id)
+            
+            # Получаем merge request
+            mr = project.mergerequests.get(merge_request_iid)
+            
+            # Подготавливаем данные для обновления
+            update_data = {}
+            
+            if title:
+                update_data['title'] = title
+            if description:
+                update_data['description'] = description
+            if assignee_id:
+                update_data['assignee_id'] = assignee_id
+            if labels:
+                update_data['labels'] = labels
+            if state_event:
+                update_data['state_event'] = state_event
+            
+            # Обновляем merge request
+            if update_data:
+                mr.save()
+            
+            logger.info(f"✅ Merge request {merge_request_iid} обновлен")
+            return format_tool_response(True, f"Merge request #{merge_request_iid} обновлен успешно")
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка обновления merge request: {e}")
+            return format_tool_response(False, f"Ошибка обновления merge request: {str(e)}")
+    
+    def list_branches(self, project_id: str, per_page: int = 20) -> Dict[str, Any]:
+        """Получает список веток проекта"""
+        try:
+            if not self.gitlab:
+                return format_tool_response(False, "GitLab не подключен")
+            
+            # Получаем проект
+            project = self.gitlab.projects.get(project_id)
             
             # Получаем ветки
-            branches = project.branches.list()
+            branches = project.branches.list(per_page=per_page)
             
-            result = []
+            # Форматируем результаты
+            branch_list = []
             for branch in branches:
-                result.append({
-                    'name': branch.name,
-                    'default': branch.default,
-                    'protected': branch.protected,
-                    'web_url': f"{project.web_url}/-/tree/{branch.name}"
-                })
+                branch_data = {
+                    "name": branch.name,
+                    "default": branch.default,
+                    "protected": branch.protected,
+                    "developers_can_push": branch.developers_can_push,
+                    "developers_can_merge": branch.developers_can_merge,
+                    "commit": {
+                        "id": branch.commit['id'],
+                        "short_id": branch.commit['short_id'],
+                        "title": branch.commit['title'],
+                        "author_name": branch.commit['author_name'],
+                        "created_at": branch.commit['created_at']
+                    }
+                }
+                branch_list.append(branch_data)
             
-            return {'branches': result, 'project_name': project.name}
+            logger.info(f"✅ Получены ветки проекта: {len(branch_list)}")
+            return format_tool_response(True, f"Получены ветки проекта", branch_list)
+            
         except Exception as e:
-            return {'error': str(e)}
+            logger.error(f"❌ Ошибка получения веток: {e}")
+            return format_tool_response(False, f"Ошибка получения веток: {str(e)}")
     
-    def _search_commits_by_task_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Ищет коммиты по номеру задачи через инструмент"""
+    def create_branch(self, project_id: str, branch_name: str, ref: str = None) -> Dict[str, Any]:
+        """Создает новую ветку в проекте"""
         try:
-            task_key = arguments.get('task_key')
-            per_page = arguments.get('per_page', 20)
+            if not self.gitlab:
+                return format_tool_response(False, "GitLab не подключен")
             
-            if not task_key:
-                return {'error': 'Не указан номер задачи'}
+            # Получаем проект
+            project = self.gitlab.projects.get(project_id)
             
-            # Ищем коммиты по всем проектам, которые содержат номер задачи
-            all_commits = []
-            
-            # Получаем все проекты пользователя
-            projects = self.gl.projects.list(per_page=100, membership=True)
-            
-            for project in projects:
-                try:
-                    # Ищем коммиты, содержащие номер задачи в сообщении
-                    commits = project.commits.list(
-                        per_page=per_page,
-                        search=task_key,
-                        order_by='created_at',
-                        sort='desc'
-                    )
-                    
-                    for commit in commits:
-                        # Проверяем, что коммит действительно содержит номер задачи
-                        if commit.title.startswith(task_key) or f" {task_key}" in commit.title:
-                            all_commits.append({
-                                'id': commit.id,
-                                'short_id': commit.short_id,
-                                'title': commit.title,
-                                'message': commit.message,
-                                'author_name': commit.author_name,
-                                'author_email': getattr(commit, 'author_email', ''),
-                                'created_at': commit.created_at,
-                                'project_name': project.name,
-                                'web_url': f"{project.web_url}/-/commit/{commit.id}"
-                            })
-                except Exception:
-                    # Пропускаем проекты с ошибками доступа
-                    continue
-            
-            # Сортируем по дате создания
-            all_commits.sort(key=lambda x: x['created_at'], reverse=True)
-            
-            # Ограничиваем количество результатов
-            all_commits = all_commits[:per_page]
-            
-            return {'commits': all_commits, 'task_key': task_key}
-        except Exception as e:
-            return {'error': str(e)}
-
-    def get_tools(self) -> List[Dict[str, Any]]:
-        """Возвращает список доступных инструментов GitLab"""
-        return [
-            {
-                "name": "list_projects",
-                "description": "Получает список проектов GitLab",
-                "parameters": {
-                    "search": {"type": "string", "description": "Поисковый запрос"},
-                    "per_page": {"type": "integer", "description": "Количество результатов на странице"}
-                }
-            },
-            {
-                "name": "get_project_commits",
-                "description": "Получает коммиты проекта",
-                "parameters": {
-                    "project_name": {"type": "string", "description": "Название проекта"},
-                    "project_id": {"type": "string", "description": "ID проекта (альтернатива project_name)"},
-                    "per_page": {"type": "integer", "description": "Количество коммитов"},
-                    "author_email": {"type": "string", "description": "Email автора для фильтрации"}
-                }
-            },
-            {
-                "name": "create_merge_request",
-                "description": "Создает merge request",
-                "parameters": {
-                    "project_name": {"type": "string", "description": "Название проекта"},
-                    "project_id": {"type": "string", "description": "ID проекта (альтернатива project_name)"},
-                    "source_branch": {"type": "string", "description": "Исходная ветка"},
-                    "target_branch": {"type": "string", "description": "Целевая ветка"},
-                    "title": {"type": "string", "description": "Заголовок MR"},
-                    "description": {"type": "string", "description": "Описание MR"}
-                }
-            },
-            {
-                "name": "get_project_branches",
-                "description": "Получает ветки проекта",
-                "parameters": {
-                    "project_name": {"type": "string", "description": "Название проекта"}
-                }
-            },
-            {
-                "name": "search_commits_by_task",
-                "description": "Ищет коммиты по номеру задачи",
-                "parameters": {
-                    "task_key": {"type": "string", "description": "Номер задачи (например, PROJ-123)"},
-                    "per_page": {"type": "integer", "description": "Количество результатов"}
-                }
+            # Создаем ветку
+            branch_data = {
+                'branch': branch_name,
+                'ref': ref or 'main'
             }
-        ]
-
-    def check_health(self) -> Dict[str, Any]:
-        """Проверка состояния подключения к GitLab"""
-        try:
-            if self.gl:
-                # Проверяем подключение
-                self.gl.user
-                return {'status': 'connected', 'url': self.gitlab_url}
-            else:
-                return {'status': 'not_configured', 'url': None}
+            
+            branch = project.branches.create(branch_data)
+            
+            logger.info(f"✅ Создана ветка: {branch_name}")
+            return format_tool_response(
+                True,
+                f"Ветка '{branch_name}' создана успешно",
+                {
+                    "name": branch.name,
+                    "default": branch.default,
+                    "protected": branch.protected,
+                    "commit": branch.commit
+                }
+            )
+            
         except Exception as e:
-            return {'status': 'error', 'error': str(e), 'url': self.gitlab_url}
+            logger.error(f"❌ Ошибка создания ветки: {e}")
+            return format_tool_response(False, f"Ошибка создания ветки: {str(e)}")
+    
+    def get_file_content(self, project_id: str, file_path: str, ref: str = None) -> Dict[str, Any]:
+        """Получает содержимое файла из репозитория"""
+        try:
+            if not self.gitlab:
+                return format_tool_response(False, "GitLab не подключен")
+            
+            # Получаем проект
+            project = self.gitlab.projects.get(project_id)
+            
+            # Получаем файл
+            file_content = project.files.get(file_path, ref=ref or 'main')
+            
+            logger.info(f"✅ Получено содержимое файла: {file_path}")
+            return format_tool_response(
+                True,
+                f"Содержимое файла '{file_path}' получено",
+                {
+                    "file_path": file_path,
+                    "content": file_content.decode(),
+                    "encoding": file_content.encoding,
+                    "size": file_content.size,
+                    "ref": ref or 'main'
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения файла: {e}")
+            return format_tool_response(False, f"Ошибка получения файла: {str(e)}")
+
+# ============================================================================
+# ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+# ============================================================================
+
+# Глобальный экземпляр GitLab сервера
+gitlab_server = GitLabFastMCPServer()

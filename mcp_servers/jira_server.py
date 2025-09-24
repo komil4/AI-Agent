@@ -1,89 +1,248 @@
+#!/usr/bin/env python3
+"""
+MCP сервер для работы с Jira с использованием стандарта Anthropic
+"""
+
+# ============================================================================
+# ИНИЦИАЛИЗАЦИЯ МОДУЛЯ
+# ============================================================================
+
 import os
 import requests
 from jira import JIRA
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+from datetime import datetime
 from analyzers.code_analyzer import CodeAnalyzer
-from config.config_manager import ConfigManager
-from . import BaseMCPServer
+from .base_fastmcp_server import BaseFastMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
 
-class JiraMCPServer(BaseMCPServer):
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# ПРОГРАММНЫЙ ИНТЕРФЕЙС (API)
+# ============================================================================
+
+class JiraFastMCPServer(BaseFastMCPServer):
     """MCP сервер для работы с Jira - управление задачами, проектами и отслеживанием проблем"""
     
     def __init__(self):
-        super().__init__()
-        self.description = "Jira - управление задачами, проектами и отслеживанием проблем"
-        self.tools = [
-            {
-                "name": "create_issue",
-                "description": "Создает новую задачу в Jira",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "summary": {"type": "string", "description": "Краткое описание задачи"},
-                        "description": {"type": "string", "description": "Подробное описание задачи"},
-                        "project_key": {"type": "string", "description": "Ключ проекта (например, TEST)"},
-                        "issue_type": {"type": "string", "description": "Тип задачи (Task, Bug, Story)"}
-                    },
-                    "required": ["summary", "project_key"]
-                }
-            },
-            {
-                "name": "search_issues",
-                "description": "Ищет задачи в Jira по JQL запросу",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "jql": {"type": "string", "description": "JQL запрос для поиска"},
-                        "max_results": {"type": "integer", "description": "Максимальное количество результатов"}
-                    },
-                    "required": ["jql"]
-                }
-            },
-            {
-                "name": "list_issues",
-                "description": "Получает список задач проекта",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "project_key": {"type": "string", "description": "Ключ проекта"},
-                        "status": {"type": "string", "description": "Статус задач"},
-                        "assignee": {"type": "string", "description": "Исполнитель задач"}
-                    }
-                }
-            },
-            {
-                "name": "update_issue_status",
-                "description": "Обновляет статус задачи",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "issue_key": {"type": "string", "description": "Ключ задачи"},
-                        "status": {"type": "string", "description": "Новый статус"}
-                    },
-                    "required": ["issue_key", "status"]
-                }
-            },
-            {
-                "name": "get_issue_details",
-                "description": "Получает детальную информацию о задаче",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "issue_key": {"type": "string", "description": "Ключ задачи"}
-                    },
-                    "required": ["issue_key"]
-                }
-            }
-        ]
-        
-        self.config_manager = ConfigManager()
+        """Инициализация Jira MCP сервера"""
+        super().__init__("jira")
         self.jira_url = None
         self.username = None
         self.api_token = None
         self.jira = None
         self.code_analyzer = CodeAnalyzer()
-        self._load_config()
-        self._connect()
+        
+        # Настройки для админ-панели
+        self.display_name = "Jira MCP"
+        self.icon = "fas fa-tasks"
+        self.category = "mcp_servers"
+        self.admin_fields = [
+            { 'key': 'url', 'label': 'URL Jira', 'type': 'text', 'placeholder': 'https://your-domain.atlassian.net' },
+            { 'key': 'username', 'label': 'Имя пользователя', 'type': 'text', 'placeholder': 'your-email@domain.com' },
+            { 'key': 'api_token', 'label': 'API Token', 'type': 'password', 'placeholder': 'ваш API токен' },
+            { 'key': 'project_key', 'label': 'Ключ проекта', 'type': 'text', 'placeholder': 'PROJ' },
+            { 'key': 'enabled', 'label': 'Включен', 'type': 'checkbox' }
+        ]
+        
+        # Определяем инструменты в стандарте Anthropic
+        self.tools = [
+            create_tool_schema(
+                name="create_issue",
+                description="Создает новую задачу в Jira с указанными параметрами",
+                parameters={
+                    "properties": {
+                        "summary": {
+                            "type": "string",
+                            "description": "Краткое описание задачи (обязательно)"
+                        },
+                        "description": {
+                            "type": "string", 
+                            "description": "Подробное описание задачи"
+                        },
+                        "project_key": {
+                            "type": "string",
+                            "description": "Ключ проекта (например, TEST)"
+                        },
+                        "issue_type": {
+                            "type": "string",
+                            "description": "Тип задачи (Task, Bug, Story, Epic)",
+                            "enum": ["Task", "Bug", "Story", "Epic"]
+                        },
+                        "priority": {
+                            "type": "string",
+                            "description": "Приоритет задачи",
+                            "enum": ["Highest", "High", "Medium", "Low", "Lowest"]
+                        },
+                        "assignee": {
+                            "type": "string",
+                            "description": "Исполнитель задачи (username)"
+                        },
+                        "labels": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Метки задачи"
+                        }
+                    },
+                    "required": ["summary", "project_key"]
+                }
+            ),
+            create_tool_schema(
+                name="search_issues",
+                description="Ищет задачи в Jira по JQL запросу с возможностью фильтрации",
+                parameters={
+                    "properties": {
+                        "jql": {
+                            "type": "string",
+                            "description": "JQL запрос для поиска задач"
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Максимальное количество результатов (по умолчанию 50)",
+                            "minimum": 1,
+                            "maximum": 1000
+                        },
+                        "fields": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Поля для возврата (summary, status, assignee, etc.)"
+                        }
+                    },
+                    "required": ["jql"]
+                }
+            ),
+            create_tool_schema(
+                name="get_issue_details",
+                description="Получает детальную информацию о конкретной задаче",
+                parameters={
+                    "properties": {
+                        "issue_key": {
+                            "type": "string",
+                            "description": "Ключ задачи (например, TEST-123)"
+                        },
+                        "include_comments": {
+                            "type": "boolean",
+                            "description": "Включать комментарии в результат"
+                        },
+                        "include_attachments": {
+                            "type": "boolean", 
+                            "description": "Включать информацию о вложениях"
+                        }
+                    },
+                    "required": ["issue_key"]
+                }
+            ),
+            create_tool_schema(
+                name="update_issue",
+                description="Обновляет существующую задачу в Jira",
+                parameters={
+                    "properties": {
+                        "issue_key": {
+                            "type": "string",
+                            "description": "Ключ задачи для обновления"
+                        },
+                        "summary": {
+                            "type": "string",
+                            "description": "Новое краткое описание"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Новое подробное описание"
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "Новый статус задачи"
+                        },
+                        "assignee": {
+                            "type": "string",
+                            "description": "Новый исполнитель"
+                        },
+                        "priority": {
+                            "type": "string",
+                            "description": "Новый приоритет"
+                        },
+                        "labels": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Новые метки"
+                        }
+                    },
+                    "required": ["issue_key"]
+                }
+            ),
+            create_tool_schema(
+                name="add_comment",
+                description="Добавляет комментарий к задаче",
+                parameters={
+                    "properties": {
+                        "issue_key": {
+                            "type": "string",
+                            "description": "Ключ задачи"
+                        },
+                        "comment": {
+                            "type": "string",
+                            "description": "Текст комментария"
+                        },
+                        "visibility": {
+                            "type": "string",
+                            "description": "Видимость комментария",
+                            "enum": ["public", "private"]
+                        }
+                    },
+                    "required": ["issue_key", "comment"]
+                }
+            ),
+            create_tool_schema(
+                name="list_projects",
+                description="Получает список доступных проектов в Jira",
+                parameters={
+                    "properties": {
+                        "include_archived": {
+                            "type": "boolean",
+                            "description": "Включать архивированные проекты"
+                        }
+                    }
+                }
+            ),
+            create_tool_schema(
+                name="get_project_details",
+                description="Получает детальную информацию о проекте",
+                parameters={
+                    "properties": {
+                        "project_key": {
+                            "type": "string",
+                            "description": "Ключ проекта"
+                        }
+                    },
+                    "required": ["project_key"]
+                }
+            ),
+            create_tool_schema(
+                name="transition_issue",
+                description="Переводит задачу в новый статус (workflow transition)",
+                parameters={
+                    "properties": {
+                        "issue_key": {
+                            "type": "string",
+                            "description": "Ключ задачи"
+                        },
+                        "transition_name": {
+                            "type": "string",
+                            "description": "Название перехода (например, 'In Progress', 'Done')"
+                        },
+                        "comment": {
+                            "type": "string",
+                            "description": "Комментарий к переходу"
+                        }
+                    },
+                    "required": ["issue_key", "transition_name"]
+                }
+            )
+        ]
+    
+    def _get_description(self) -> str:
+        """Возвращает описание сервера"""
+        return "Jira MCP сервер - управление задачами, проектами и отслеживанием проблем в Atlassian Jira"
     
     def _load_config(self):
         """Загружает конфигурацию Jira"""
@@ -97,564 +256,343 @@ class JiraMCPServer(BaseMCPServer):
         try:
             jira_config = self.config_manager.get_service_config('jira')
             if not jira_config.get('enabled', False):
-                print("⚠️ Jira отключен в конфигурации")
+                logger.info("ℹ️ Jira отключен в конфигурации")
                 return
-                
-            if self.jira_url and self.username and self.api_token:
-                self.jira = JIRA(
-                    server=self.jira_url,
-                    basic_auth=(self.username, self.api_token)
-                )
-                print("✅ Подключение к Jira успешно")
-            else:
-                print("⚠️ Jira не настроен - отсутствуют данные в конфигурации")
-        except Exception as e:
-            print(f"❌ Ошибка подключения к Jira: {e}")
-    
-    def reconnect(self):
-        """Переподключается к Jira с новой конфигурацией"""
-        self._load_config()
-        self._connect()
-    
-    def process_command(self, message: str) -> str:
-        """Обрабатывает команды для Jira (упрощенный метод)"""
-        if not self.jira:
-            return "❌ Jira не настроен. Проверьте переменные окружения."
-        
-        message_lower = message.lower()
-        
-        try:
-            if any(word in message_lower for word in ['создать', 'новая', 'создай']):
-                return self._create_issue(message)
-            elif any(word in message_lower for word in ['найти', 'поиск', 'найди']):
-                return self._search_issues(message)
-            elif any(word in message_lower for word in ['список', 'все', 'показать']):
-                return self._list_issues()
-            elif any(word in message_lower for word in ['статус', 'обновить', 'изменить']):
-                return self._update_issue_status(message)
-            elif any(word in message_lower for word in ['проанализируй', 'анализ', 'анализируй']):
-                return self._analyze_task_code(message)
-            else:
-                return self._get_help()
-        except Exception as e:
-            return f"❌ Ошибка при работе с Jira: {str(e)}"
-    
-    def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Вызывает инструмент Jira по имени"""
-        if not self.jira:
-            return {"error": "Jira не настроен"}
-        
-        try:
-            if tool_name == "create_issue":
-                return self._create_issue_tool(arguments)
-            elif tool_name == "search_issues":
-                return self._search_issues_tool(arguments)
-            elif tool_name == "list_issues":
-                return self._list_issues_tool(arguments)
-            elif tool_name == "update_issue_status":
-                return self._update_issue_status_tool(arguments)
-            elif tool_name == "get_issue_details":
-                return self._get_issue_details_tool(arguments)
-            else:
-                return {"error": f"Неизвестный инструмент: {tool_name}"}
-        except Exception as e:
-            return {"error": str(e)}
-    
-    def process_command_intelligent(self, message: str, intent_result, user_context: dict = None) -> str:
-        """Обрабатывает команды для Jira на основе анализа намерений"""
-        if not self.jira:
-            return "❌ Jira не настроен. Проверьте переменные окружения."
-        
-        try:
-            # Временная заглушка для intent_analyzer
-            class IntentType:
-                JIRA_CREATE = "jira_create"
-                JIRA_SEARCH = "jira_search"
-                JIRA_LIST = "jira_list"
-                JIRA_UPDATE = "jira_update"
-                JIRA_ANALYZE = "jira_analyze"
             
-            # Обрабатываем на основе намерения
-            if intent_result.intent == IntentType.JIRA_CREATE:
-                return self._create_issue_intelligent(message, intent_result)
-            elif intent_result.intent == IntentType.JIRA_SEARCH:
-                return self._search_issues_intelligent(message, intent_result)
-            elif intent_result.intent == IntentType.JIRA_LIST:
-                return self._list_issues_intelligent(message, intent_result)
-            elif intent_result.intent == IntentType.JIRA_UPDATE:
-                return self._update_issue_status_intelligent(message, intent_result)
-            elif intent_result.intent == IntentType.JIRA_ANALYZE:
-                return self._analyze_task_code_intelligent(message, intent_result)
-            else:
-                # Fallback к старому методу
-                return self.process_command(message)
+            if not all([self.jira_url, self.username, self.api_token]):
+                logger.warning("⚠️ Неполная конфигурация Jira")
+                return
+            
+            # Подключение к Jira
+            self.jira = JIRA(
+                server=self.jira_url,
+                basic_auth=(self.username, self.api_token)
+            )
+            
+            # Проверяем подключение
+            self.jira.current_user()
+            logger.info(f"✅ Подключение к Jira успешно: {self.jira_url}")
+            
         except Exception as e:
-            return f"❌ Ошибка при работе с Jira: {str(e)}"
+            logger.error(f"❌ Ошибка подключения к Jira: {e}")
+            self.jira = None
     
-    def _create_issue(self, message: str) -> str:
+    def _test_connection(self) -> bool:
+        """Тестирует подключение к Jira"""
+        if not self.jira:
+            return False
+        
+        try:
+            self.jira.current_user()
+            return True
+        except Exception:
+            return False
+    
+    # ============================================================================
+    # ИНСТРУМЕНТЫ JIRA
+    # ============================================================================
+    
+    def create_issue(self, summary: str, project_key: str, description: str = None, 
+                    issue_type: str = "Task", priority: str = None, assignee: str = None,
+                    labels: List[str] = None) -> Dict[str, Any]:
         """Создает новую задачу в Jira"""
-        # Простое извлечение данных из сообщения
-        issue_data = {
-            'project': {'key': 'TEST'},  # Замените на ваш проект
-            'summary': 'Новая задача из чат-бота',
-            'description': message,
-            'issuetype': {'name': 'Task'}
-        }
-        
         try:
-            issue = self.jira.create_issue(fields=issue_data)
-            return f"✅ Создана задача: {issue.key} - {issue.fields.summary}"
+            if not self.jira:
+                return format_tool_response(False, "Jira не подключен")
+            
+            # Подготавливаем данные для создания задачи
+            issue_dict = {
+                'project': {'key': project_key},
+                'summary': summary,
+                'issuetype': {'name': issue_type}
+            }
+            
+            if description:
+                issue_dict['description'] = description
+            
+            if priority:
+                issue_dict['priority'] = {'name': priority}
+            
+            if assignee:
+                issue_dict['assignee'] = {'name': assignee}
+            
+            if labels:
+                issue_dict['labels'] = labels
+            
+            # Создаем задачу
+            new_issue = self.jira.create_issue(fields=issue_dict)
+            
+            logger.info(f"✅ Создана задача: {new_issue.key}")
+            return format_tool_response(
+                True, 
+                f"Задача {new_issue.key} создана успешно",
+                {
+                    "issue_key": new_issue.key,
+                    "summary": new_issue.fields.summary,
+                    "status": new_issue.fields.status.name,
+                    "url": f"{self.jira_url}/browse/{new_issue.key}"
+                }
+            )
+            
         except Exception as e:
-            return f"❌ Ошибка создания задачи: {str(e)}"
+            logger.error(f"❌ Ошибка создания задачи: {e}")
+            return format_tool_response(False, f"Ошибка создания задачи: {str(e)}")
     
-    def _search_issues(self, message: str) -> str:
-        """Поиск задач в Jira"""
+    def search_issues(self, jql: str, max_results: int = 50, fields: List[str] = None) -> Dict[str, Any]:
+        """Ищет задачи в Jira по JQL запросу"""
         try:
-            # Простой поиск по ключевым словам
-            jql = f'text ~ "{message}" ORDER BY created DESC'
-            issues = self.jira.search_issues(jql, maxResults=5)
+            if not self.jira:
+                return format_tool_response(False, "Jira не подключен")
             
-            if not issues:
-                return "🔍 Задачи не найдены"
+            # Определяем поля для возврата
+            if not fields:
+                fields = ['summary', 'status', 'assignee', 'priority', 'created', 'updated']
             
-            result = "🔍 Найденные задачи:\n"
+            # Выполняем поиск
+            issues = self.jira.search_issues(jql, maxResults=max_results, fields=fields)
+            
+            # Форматируем результаты
+            results = []
             for issue in issues:
-                result += f"• {issue.key}: {issue.fields.summary} ({issue.fields.status.name})\n"
+                issue_data = {
+                    "key": issue.key,
+                    "summary": issue.fields.summary,
+                    "status": issue.fields.status.name if issue.fields.status else None,
+                    "assignee": issue.fields.assignee.displayName if issue.fields.assignee else None,
+                    "priority": issue.fields.priority.name if issue.fields.priority else None,
+                    "created": issue.fields.created,
+                    "updated": issue.fields.updated,
+                    "url": f"{self.jira_url}/browse/{issue.key}"
+                }
+                results.append(issue_data)
             
-            return result
+            logger.info(f"✅ Найдено {len(results)} задач по запросу")
+            return format_tool_response(
+                True,
+                f"Найдено {len(results)} задач",
+                {
+                    "total": len(results),
+                    "issues": results,
+                    "jql": jql
+                }
+            )
+            
         except Exception as e:
-            return f"❌ Ошибка поиска: {str(e)}"
+            logger.error(f"❌ Ошибка поиска задач: {e}")
+            return format_tool_response(False, f"Ошибка поиска задач: {str(e)}")
     
-    def _list_issues(self) -> str:
-        """Список последних задач"""
+    def get_issue_details(self, issue_key: str, include_comments: bool = False, 
+                         include_attachments: bool = False) -> Dict[str, Any]:
+        """Получает детальную информацию о задаче"""
         try:
-            jql = 'ORDER BY created DESC'
-            issues = self.jira.search_issues(jql, maxResults=10)
+            if not self.jira:
+                return format_tool_response(False, "Jira не подключен")
             
-            if not issues:
-                return "📋 Задач не найдено"
-            
-            result = "📋 Последние задачи:\n"
-            for issue in issues:
-                result += f"• {issue.key}: {issue.fields.summary} ({issue.fields.status.name})\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка получения списка: {str(e)}"
-    
-    def _update_issue_status(self, message: str) -> str:
-        """Обновляет статус задачи"""
-        # Извлекаем ключ задачи из сообщения
-        words = message.split()
-        issue_key = None
-        for word in words:
-            if '-' in word and len(word.split('-')) == 2:
-                issue_key = word
-                break
-        
-        if not issue_key:
-            return "❌ Не указан ключ задачи (например: TEST-123)"
-        
-        try:
+            # Получаем задачу
             issue = self.jira.issue(issue_key)
-            transitions = self.jira.transitions(issue)
             
-            if transitions:
-                # Переводим в первый доступный статус
-                transition_id = transitions[0]['id']
-                self.jira.transition_issue(issue, transition_id)
-                return f"✅ Статус задачи {issue_key} обновлен"
-            else:
-                return f"❌ Нет доступных переходов для задачи {issue_key}"
-        except Exception as e:
-            return f"❌ Ошибка обновления статуса: {str(e)}"
-    
-    def _analyze_task_code(self, message: str) -> str:
-        """Анализирует код по задаче"""
-        import re
-        
-        # Извлекаем номер задачи из сообщения
-        task_pattern = r'№\s*([A-Z]+-\d+)|задач[аи]\s*№\s*([A-Z]+-\d+)|([A-Z]+-\d+)'
-        matches = re.findall(task_pattern, message, re.IGNORECASE)
-        
-        task_key = None
-        for match in matches:
-            task_key = match[0] or match[1] or match[2]
-            if task_key:
-                break
-        
-        if not task_key:
-            return """
-❌ Не удалось найти номер задачи в сообщении.
-
-Примеры использования:
-- "проанализируй код под задачу №PROJ-123"
-- "анализ задачи PROJ-456"
-- "анализируй код задачи №TEST-789"
-            """
-        
-        try:
-            # Выполняем анализ
-            report = self.code_analyzer.analyze_task_code(task_key)
-            
-            if not report:
-                return f"❌ Не удалось проанализировать задачу {task_key}. Проверьте подключения к сервисам."
-            
-            # Генерируем отчет
-            return self.code_analyzer.generate_report_text(report)
-            
-        except Exception as e:
-            return f"❌ Ошибка анализа задачи {task_key}: {str(e)}"
-    
-    def _get_help(self) -> str:
-        """Справка по командам Jira"""
-        return """
-🔧 Команды для работы с Jira:
-
-• Создать задачу: "создай задачу в jira"
-• Найти задачи: "найди задачи по ключевому слову"
-• Список задач: "покажи все задачи"
-• Обновить статус: "измени статус задачи TEST-123"
-• Анализ кода: "проанализируй код под задачу №PROJ-123"
-
-Примеры:
-- "создай новую задачу в jira с описанием 'исправить баг'"
-- "найди все задачи связанные с авторизацией"
-- "покажи последние 10 задач"
-- "проанализируй код под задачу №PROJ-123"
-        """
-    
-    def _create_issue_intelligent(self, message: str, intent_result) -> str:
-        """Создает новую задачу в Jira на основе анализа намерений"""
-        try:
-            # Извлекаем информацию из сущностей
-            entities = intent_result.entities
-            search_query = entities.get('search_query', '')
-            
-            # Создаем описание на основе сообщения
-            description = message
-            if search_query:
-                description = f"{message}\n\nКлючевые слова: {search_query}"
-            
+            # Базовые данные
             issue_data = {
-                'project': {'key': 'TEST'},  # Замените на ваш проект
-                'summary': f"Задача из чат-бота: {message[:50]}...",
-                'description': description,
-                'issuetype': {'name': 'Task'}
+                "key": issue.key,
+                "summary": issue.fields.summary,
+                "description": issue.fields.description,
+                "status": issue.fields.status.name,
+                "priority": issue.fields.priority.name if issue.fields.priority else None,
+                "assignee": issue.fields.assignee.displayName if issue.fields.assignee else None,
+                "reporter": issue.fields.reporter.displayName if issue.fields.reporter else None,
+                "created": issue.fields.created,
+                "updated": issue.fields.updated,
+                "labels": issue.fields.labels,
+                "url": f"{self.jira_url}/browse/{issue.key}"
             }
             
-            issue = self.jira.create_issue(fields=issue_data)
-            return f"✅ Создана задача: {issue.key} - {issue.fields.summary}\n\n📝 Описание: {description}"
-        except Exception as e:
-            return f"❌ Ошибка создания задачи: {str(e)}"
-    
-    def _search_issues_intelligent(self, message: str, intent_result) -> str:
-        """Поиск задач в Jira на основе анализа намерений"""
-        try:
-            entities = intent_result.entities
-            search_query = entities.get('search_query', '')
+            # Комментарии
+            if include_comments:
+                comments = []
+                for comment in issue.fields.comment.comments:
+                    comments.append({
+                        "author": comment.author.displayName,
+                        "body": comment.body,
+                        "created": comment.created
+                    })
+                issue_data["comments"] = comments
             
-            # Используем поисковый запрос из сущностей или весь текст сообщения
-            query = search_query if search_query else message
+            # Вложения
+            if include_attachments:
+                attachments = []
+                for attachment in issue.fields.attachment:
+                    attachments.append({
+                        "filename": attachment.filename,
+                        "size": attachment.size,
+                        "created": attachment.created,
+                        "url": attachment.content
+                    })
+                issue_data["attachments"] = attachments
             
-            jql = f'text ~ "{query}" ORDER BY created DESC'
-            issues = self.jira.search_issues(jql, maxResults=5)
-            
-            if not issues:
-                return f"🔍 Задачи по запросу '{query}' не найдены"
-            
-            result = f"🔍 Найденные задачи по запросу '{query}':\n\n"
-            for issue in issues:
-                result += f"• **{issue.key}**: {issue.fields.summary} ({issue.fields.status.name})\n"
-                result += f"  📅 Создана: {issue.fields.created[:10]}\n"
-                result += f"  👤 Автор: {issue.fields.reporter.displayName}\n\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка поиска: {str(e)}"
-    
-    def _list_issues_intelligent(self, message: str, intent_result) -> str:
-        """Список задач в Jira на основе анализа намерений"""
-        try:
-            # Определяем количество задач из сообщения
-            import re
-            count_match = re.search(r'(\d+)', message)
-            max_results = int(count_match.group(1)) if count_match else 10
-            
-            jql = 'ORDER BY created DESC'
-            issues = self.jira.search_issues(jql, maxResults=max_results)
-            
-            if not issues:
-                return "📋 Задач не найдено"
-            
-            result = f"📋 Последние {len(issues)} задач:\n\n"
-            for issue in issues:
-                result += f"• **{issue.key}**: {issue.fields.summary}\n"
-                result += f"  📊 Статус: {issue.fields.status.name}\n"
-                result += f"  📅 Создана: {issue.fields.created[:10]}\n"
-                result += f"  👤 Автор: {issue.fields.reporter.displayName}\n\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка получения списка: {str(e)}"
-    
-    def _update_issue_status_intelligent(self, message: str, intent_result) -> str:
-        """Обновляет статус задачи в Jira на основе анализа намерений"""
-        try:
-            entities = intent_result.entities
-            task_key = entities.get('task_key', '')
-            
-            if not task_key:
-                # Пытаемся найти ключ задачи в сообщении
-                import re
-                key_match = re.search(r'([A-Z]+-\d+)', message)
-                if key_match:
-                    task_key = key_match.group(1)
-                else:
-                    return "❌ Не указан ключ задачи (например: PROJ-123)"
-            
-            issue = self.jira.issue(task_key)
-            transitions = self.jira.transitions(issue)
-            
-            if transitions:
-                # Переводим в первый доступный статус
-                transition_id = transitions[0]['id']
-                transition_name = transitions[0]['name']
-                self.jira.transition_issue(issue, transition_id)
-                return f"✅ Задача {task_key} переведена в статус '{transition_name}'"
-            else:
-                return f"❌ Нет доступных переходов для задачи {task_key}"
-        except Exception as e:
-            return f"❌ Ошибка обновления статуса: {str(e)}"
-    
-    def _analyze_task_code_intelligent(self, message: str, intent_result) -> str:
-        """Анализирует код по задаче на основе анализа намерений"""
-        try:
-            entities = intent_result.entities
-            task_key = entities.get('task_key', '') or entities.get('task_number', '')
-            
-            if not task_key:
-                # Пытаемся найти ключ задачи в сообщении
-                import re
-                key_match = re.search(r'([A-Z]+-\d+)', message)
-                if key_match:
-                    task_key = key_match.group(1)
-                else:
-                    return """
-❌ Не удалось найти номер задачи в сообщении.
-
-Примеры использования:
-- "проанализируй код под задачу №PROJ-123"
-- "анализ задачи PROJ-456"
-- "анализируй код задачи №TEST-789"
-                    """
-            
-            # Выполняем анализ
-            report = self.code_analyzer.analyze_task_code(task_key)
-            
-            if not report:
-                return f"❌ Не удалось проанализировать задачу {task_key}. Проверьте подключения к сервисам."
-            
-            # Генерируем отчет
-            return self.code_analyzer.generate_report_text(report)
+            logger.info(f"✅ Получены детали задачи: {issue_key}")
+            return format_tool_response(True, "Детали задачи получены", issue_data)
             
         except Exception as e:
-            return f"❌ Ошибка анализа задачи: {str(e)}"
+            logger.error(f"❌ Ошибка получения деталей задачи: {e}")
+            return format_tool_response(False, f"Ошибка получения деталей задачи: {str(e)}")
     
-    def _create_issue_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Создает задачу через инструмент"""
+    def update_issue(self, issue_key: str, summary: str = None, description: str = None,
+                    status: str = None, assignee: str = None, priority: str = None,
+                    labels: List[str] = None) -> Dict[str, Any]:
+        """Обновляет существующую задачу"""
         try:
-            issue_data = {
-                'project': {'key': arguments.get('project_key', 'TEST')},
-                'summary': arguments.get('summary', 'Новая задача'),
-                'description': arguments.get('description', ''),
-                'issuetype': {'name': arguments.get('issue_type', 'Task')}
-            }
+            if not self.jira:
+                return format_tool_response(False, "Jira не подключен")
             
-            issue = self.jira.create_issue(fields=issue_data)
-            return {
-                'success': True,
-                'issue_key': issue.key,
-                'summary': issue.fields.summary,
-                'url': f"{self.jira_url}/browse/{issue.key}"
-            }
-        except Exception as e:
-            return {'error': str(e)}
-    
-    def _search_issues_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Ищет задачи через инструмент"""
-        try:
-            jql = arguments.get('jql', 'ORDER BY created DESC')
-            max_results = arguments.get('max_results', 10)
-            
-            issues = self.jira.search_issues(jql, maxResults=max_results)
-            
-            result = []
-            for issue in issues:
-                result.append({
-                    'key': issue.key,
-                    'summary': issue.fields.summary,
-                    'status': issue.fields.status.name,
-                    'assignee': issue.fields.assignee.displayName if issue.fields.assignee else 'Не назначен',
-                    'created': str(issue.fields.created),
-                    'url': f"{self.jira_url}/browse/{issue.key}"
-                })
-            
-            return {'issues': result}
-        except Exception as e:
-            return {'error': str(e)}
-    
-    def _list_issues_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Получает список задач через инструмент"""
-        try:
-            max_results = arguments.get('max_results', 10)
-            project_key = arguments.get('project_key')
-            
-            if project_key:
-                jql = f'project = {project_key} ORDER BY created DESC'
-            else:
-                jql = 'ORDER BY created DESC'
-            
-            issues = self.jira.search_issues(jql, maxResults=max_results)
-            
-            result = []
-            for issue in issues:
-                result.append({
-                    'key': issue.key,
-                    'summary': issue.fields.summary,
-                    'status': issue.fields.status.name,
-                    'assignee': issue.fields.assignee.displayName if issue.fields.assignee else 'Не назначен',
-                    'created': str(issue.fields.created),
-                    'url': f"{self.jira_url}/browse/{issue.key}"
-                })
-            
-            return {'issues': result}
-        except Exception as e:
-            return {'error': str(e)}
-    
-    def _update_issue_status_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Обновляет статус задачи через инструмент"""
-        try:
-            issue_key = arguments.get('issue_key')
-            transition_name = arguments.get('transition_name')
-            
-            if not issue_key:
-                return {'error': 'Не указан ключ задачи'}
-            
+            # Получаем задачу
             issue = self.jira.issue(issue_key)
-            transitions = self.jira.transitions(issue)
             
-            if not transitions:
-                return {'error': f'Нет доступных переходов для задачи {issue_key}'}
+            # Подготавливаем поля для обновления
+            update_fields = {}
             
-            # Если указано название перехода, ищем его
-            if transition_name:
-                transition = None
-                for t in transitions:
-                    if t['name'].lower() == transition_name.lower():
-                        transition = t
+            if summary:
+                update_fields['summary'] = summary
+            if description:
+                update_fields['description'] = description
+            if assignee:
+                update_fields['assignee'] = {'name': assignee}
+            if priority:
+                update_fields['priority'] = {'name': priority}
+            if labels:
+                update_fields['labels'] = labels
+            
+            # Обновляем задачу
+            if update_fields:
+                issue.update(fields=update_fields)
+            
+            # Обновляем статус отдельно, если указан
+            if status:
+                transitions = self.jira.transitions(issue)
+                for transition in transitions:
+                    if transition['name'].lower() == status.lower():
+                        self.jira.transition_issue(issue, transition['id'])
                         break
-                
-                if not transition:
-                    return {'error': f'Переход "{transition_name}" не найден'}
-                
-                self.jira.transition_issue(issue, transition['id'])
-                return {
-                    'success': True,
-                    'issue_key': issue_key,
-                    'new_status': transition['name']
-                }
-            else:
-                # Используем первый доступный переход
-                transition = transitions[0]
-                self.jira.transition_issue(issue, transition['id'])
-                return {
-                    'success': True,
-                    'issue_key': issue_key,
-                    'new_status': transition['name']
-                }
+            
+            logger.info(f"✅ Задача {issue_key} обновлена")
+            return format_tool_response(True, f"Задача {issue_key} обновлена успешно")
+            
         except Exception as e:
-            return {'error': str(e)}
+            logger.error(f"❌ Ошибка обновления задачи: {e}")
+            return format_tool_response(False, f"Ошибка обновления задачи: {str(e)}")
     
-    def _get_issue_details_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Получает детали задачи через инструмент"""
+    def add_comment(self, issue_key: str, comment: str, visibility: str = "public") -> Dict[str, Any]:
+        """Добавляет комментарий к задаче"""
         try:
-            issue_key = arguments.get('issue_key')
+            if not self.jira:
+                return format_tool_response(False, "Jira не подключен")
             
-            if not issue_key:
-                return {'error': 'Не указан ключ задачи'}
+            # Добавляем комментарий
+            self.jira.add_comment(issue_key, comment, visibility=visibility)
             
+            logger.info(f"✅ Комментарий добавлен к задаче: {issue_key}")
+            return format_tool_response(True, f"Комментарий добавлен к задаче {issue_key}")
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка добавления комментария: {e}")
+            return format_tool_response(False, f"Ошибка добавления комментария: {str(e)}")
+    
+    def list_projects(self, include_archived: bool = False) -> Dict[str, Any]:
+        """Получает список проектов"""
+        try:
+            if not self.jira:
+                return format_tool_response(False, "Jira не подключен")
+            
+            # Получаем проекты
+            projects = self.jira.projects()
+            
+            # Фильтруем архивированные проекты
+            if not include_archived:
+                projects = [p for p in projects if not getattr(p, 'archived', False)]
+            
+            # Форматируем результаты
+            project_list = []
+            for project in projects:
+                project_data = {
+                    "key": project.key,
+                    "name": project.name,
+                    "description": getattr(project, 'description', ''),
+                    "lead": getattr(project, 'lead', {}).get('displayName', ''),
+                    "url": f"{self.jira_url}/browse/{project.key}"
+                }
+                project_list.append(project_data)
+            
+            logger.info(f"✅ Получен список проектов: {len(project_list)}")
+            return format_tool_response(True, f"Получен список проектов", project_list)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения списка проектов: {e}")
+            return format_tool_response(False, f"Ошибка получения списка проектов: {str(e)}")
+    
+    def get_project_details(self, project_key: str) -> Dict[str, Any]:
+        """Получает детальную информацию о проекте"""
+        try:
+            if not self.jira:
+                return format_tool_response(False, "Jira не подключен")
+            
+            # Получаем проект
+            project = self.jira.project(project_key)
+            
+            # Формируем данные проекта
+            project_data = {
+                "key": project.key,
+                "name": project.name,
+                "description": getattr(project, 'description', ''),
+                "lead": getattr(project, 'lead', {}).get('displayName', ''),
+                "projectType": getattr(project, 'projectTypeKey', ''),
+                "url": f"{self.jira_url}/browse/{project.key}"
+            }
+            
+            logger.info(f"✅ Получены детали проекта: {project_key}")
+            return format_tool_response(True, "Детали проекта получены", project_data)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения деталей проекта: {e}")
+            return format_tool_response(False, f"Ошибка получения деталей проекта: {str(e)}")
+    
+    def transition_issue(self, issue_key: str, transition_name: str, comment: str = None) -> Dict[str, Any]:
+        """Переводит задачу в новый статус"""
+        try:
+            if not self.jira:
+                return format_tool_response(False, "Jira не подключен")
+            
+            # Получаем задачу
             issue = self.jira.issue(issue_key)
             
-            return {
-                'key': issue.key,
-                'summary': issue.fields.summary,
-                'description': issue.fields.description,
-                'status': issue.fields.status.name,
-                'assignee': issue.fields.assignee.displayName if issue.fields.assignee else 'Не назначен',
-                'reporter': issue.fields.reporter.displayName if issue.fields.reporter else 'Неизвестно',
-                'created': str(issue.fields.created),
-                'updated': str(issue.fields.updated),
-                'priority': issue.fields.priority.name if issue.fields.priority else 'Не указан',
-                'url': f"{self.jira_url}/browse/{issue.key}"
-            }
+            # Получаем доступные переходы
+            transitions = self.jira.transitions(issue)
+            
+            # Ищем нужный переход
+            transition_id = None
+            for transition in transitions:
+                if transition['name'].lower() == transition_name.lower():
+                    transition_id = transition['id']
+                    break
+            
+            if not transition_id:
+                available_transitions = [t['name'] for t in transitions]
+                return format_tool_response(
+                    False, 
+                    f"Переход '{transition_name}' недоступен. Доступные: {', '.join(available_transitions)}"
+                )
+            
+            # Выполняем переход
+            self.jira.transition_issue(issue, transition_id, comment=comment)
+            
+            logger.info(f"✅ Задача {issue_key} переведена в статус: {transition_name}")
+            return format_tool_response(True, f"Задача {issue_key} переведена в статус: {transition_name}")
+            
         except Exception as e:
-            return {'error': str(e)}
+            logger.error(f"❌ Ошибка перехода задачи: {e}")
+            return format_tool_response(False, f"Ошибка перехода задачи: {str(e)}")
 
-    def get_tools(self) -> List[Dict[str, Any]]:
-        """Возвращает список доступных инструментов Jira"""
-        return [
-            {
-                "name": "create_issue",
-                "description": "Создает новую задачу в Jira",
-                "parameters": {
-                    "summary": {"type": "string", "description": "Краткое описание задачи"},
-                    "description": {"type": "string", "description": "Подробное описание задачи"},
-                    "project_key": {"type": "string", "description": "Ключ проекта (например, TEST)"},
-                    "issue_type": {"type": "string", "description": "Тип задачи (Task, Bug, Story)"}
-                }
-            },
-            {
-                "name": "search_issues",
-                "description": "Ищет задачи в Jira по JQL запросу",
-                "parameters": {
-                    "jql": {"type": "string", "description": "JQL запрос для поиска"},
-                    "max_results": {"type": "integer", "description": "Максимальное количество результатов"}
-                }
-            },
-            {
-                "name": "list_issues",
-                "description": "Получает список последних задач",
-                "parameters": {
-                    "max_results": {"type": "integer", "description": "Максимальное количество результатов"},
-                    "project_key": {"type": "string", "description": "Фильтр по проекту"}
-                }
-            },
-            {
-                "name": "update_issue_status",
-                "description": "Обновляет статус задачи",
-                "parameters": {
-                    "issue_key": {"type": "string", "description": "Ключ задачи (например, TEST-123)"},
-                    "transition_name": {"type": "string", "description": "Название перехода статуса"}
-                }
-            },
-            {
-                "name": "get_issue_details",
-                "description": "Получает детальную информацию о задаче",
-                "parameters": {
-                    "issue_key": {"type": "string", "description": "Ключ задачи"}
-                }
-            }
-        ]
+# ============================================================================
+# ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+# ============================================================================
 
-    def check_health(self) -> Dict[str, Any]:
-        """Проверка состояния подключения к Jira"""
-        try:
-            if self.jira:
-                # Проверяем подключение
-                self.jira.projects()
-                return {'status': 'connected', 'url': self.jira_url}
-            else:
-                return {'status': 'not_configured', 'url': None}
-        except Exception as e:
-            return {'status': 'error', 'error': str(e), 'url': self.jira_url}
+# Глобальный экземпляр Jira сервера
+jira_server = JiraFastMCPServer()

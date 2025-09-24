@@ -1,87 +1,306 @@
+#!/usr/bin/env python3
+"""
+MCP сервер для работы с Atlassian Confluence с использованием стандарта Anthropic
+"""
+
+# ============================================================================
+# ИНИЦИАЛИЗАЦИЯ МОДУЛЯ
+# ============================================================================
+
 import os
 import requests
+import logging
 from atlassian import Confluence
-from typing import Dict, Any, List
-from config.config_manager import ConfigManager
-from . import BaseMCPServer
+from typing import Dict, Any, List, Optional
+from datetime import datetime
+from .base_fastmcp_server import BaseFastMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
 
-class AtlassianMCPServer(BaseMCPServer):
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# ПРОГРАММНЫЙ ИНТЕРФЕЙС (API)
+# ============================================================================
+
+class AtlassianFastMCPServer(BaseFastMCPServer):
     """MCP сервер для работы с Atlassian Confluence - создание и управление документацией, страницами и знаниями"""
     
     def __init__(self):
-        super().__init__()
-        self.description = "Atlassian Confluence - создание и управление документацией, страницами и знаниями"
-        self.tools = [
-            {
-                "name": "search_pages",
-                "description": "Ищет страницы в Confluence",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Поисковый запрос"},
-                        "space_key": {"type": "string", "description": "Ключ пространства"},
-                        "limit": {"type": "integer", "description": "Максимальное количество результатов"}
-                    },
-                    "required": ["query"]
-                }
-            },
-            {
-                "name": "create_page",
-                "description": "Создает новую страницу в Confluence",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string", "description": "Заголовок страницы"},
-                        "content": {"type": "string", "description": "Содержимое страницы"},
-                        "space_key": {"type": "string", "description": "Ключ пространства"},
-                        "parent_page_id": {"type": "string", "description": "ID родительской страницы"}
-                    },
-                    "required": ["title", "content", "space_key"]
-                }
-            },
-            {
-                "name": "list_pages",
-                "description": "Получает список страниц пространства",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "space_key": {"type": "string", "description": "Ключ пространства"},
-                        "limit": {"type": "integer", "description": "Максимальное количество результатов"}
-                    }
-                }
-            },
-            {
-                "name": "get_page_content",
-                "description": "Получает содержимое страницы",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "page_id": {"type": "string", "description": "ID страницы"}
-                    },
-                    "required": ["page_id"]
-                }
-            },
-            {
-                "name": "update_page",
-                "description": "Обновляет содержимое страницы",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "page_id": {"type": "string", "description": "ID страницы"},
-                        "title": {"type": "string", "description": "Новый заголовок"},
-                        "content": {"type": "string", "description": "Новое содержимое"}
-                    },
-                    "required": ["page_id", "content"]
-                }
-            }
-        ]
-        self.config_manager = ConfigManager()
+        """Инициализация Atlassian MCP сервера"""
+        super().__init__("atlassian")
         self.confluence_url = None
         self.username = None
         self.api_token = None
         self.confluence = None
-        self._load_config()
-        self._connect()
+        
+        # Настройки для админ-панели
+        self.display_name = "Confluence MCP"
+        self.icon = "fas fa-confluence"
+        self.category = "mcp_servers"
+        self.admin_fields = [
+            { 'key': 'url', 'label': 'URL Confluence', 'type': 'text', 'placeholder': 'https://your-domain.atlassian.net/wiki' },
+            { 'key': 'username', 'label': 'Имя пользователя', 'type': 'text', 'placeholder': 'your-email@domain.com' },
+            { 'key': 'api_token', 'label': 'API Token', 'type': 'password', 'placeholder': 'ваш API токен' },
+            { 'key': 'space_key', 'label': 'Ключ пространства', 'type': 'text', 'placeholder': 'SPACE' },
+            { 'key': 'enabled', 'label': 'Включен', 'type': 'checkbox' }
+        ]
+        
+        # Определяем инструменты в стандарте Anthropic
+        self.tools = [
+            create_tool_schema(
+                name="search_pages",
+                description="Ищет страницы в Confluence по текстовому запросу с возможностью фильтрации по пространству",
+                parameters={
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Поисковый запрос для поиска страниц"
+                        },
+                        "space_key": {
+                            "type": "string",
+                            "description": "Ключ пространства для ограничения поиска"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Максимальное количество результатов (по умолчанию 20)",
+                            "minimum": 1,
+                            "maximum": 100
+                        },
+                        "content_type": {
+                            "type": "string",
+                            "description": "Тип контента для поиска",
+                            "enum": ["page", "blogpost", "comment", "attachment"]
+                        }
+                    },
+                    "required": ["query"]
+                }
+            ),
+            create_tool_schema(
+                name="create_page",
+                description="Создает новую страницу в Confluence с указанным содержимым и структурой",
+                parameters={
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Заголовок страницы"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Содержимое страницы в формате Confluence Storage Format"
+                        },
+                        "space_key": {
+                            "type": "string",
+                            "description": "Ключ пространства для создания страницы"
+                        },
+                        "parent_page_id": {
+                            "type": "string",
+                            "description": "ID родительской страницы для создания подстраницы"
+                        },
+                        "page_type": {
+                            "type": "string",
+                            "description": "Тип страницы",
+                            "enum": ["page", "blogpost"],
+                            "default": "page"
+                        },
+                        "labels": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Метки для страницы"
+                        }
+                    },
+                    "required": ["title", "content", "space_key"]
+                }
+            ),
+            create_tool_schema(
+                name="list_pages",
+                description="Получает список страниц пространства с возможностью фильтрации и сортировки",
+                parameters={
+                    "properties": {
+                        "space_key": {
+                            "type": "string",
+                            "description": "Ключ пространства"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Максимальное количество результатов (по умолчанию 20)",
+                            "minimum": 1,
+                            "maximum": 100
+                        },
+                        "page_type": {
+                            "type": "string",
+                            "description": "Тип страниц для фильтрации",
+                            "enum": ["page", "blogpost", "comment", "attachment"]
+                        },
+                        "sort": {
+                            "type": "string",
+                            "description": "Поле для сортировки",
+                            "enum": ["created", "modified", "title"]
+                        },
+                        "order": {
+                            "type": "string",
+                            "description": "Порядок сортировки",
+                            "enum": ["asc", "desc"]
+                        }
+                    },
+                    "required": ["space_key"]
+                }
+            ),
+            create_tool_schema(
+                name="get_page_content",
+                description="Получает содержимое и метаданные конкретной страницы",
+                parameters={
+                    "properties": {
+                        "page_id": {
+                            "type": "string",
+                            "description": "ID страницы"
+                        },
+                        "include_metadata": {
+                            "type": "boolean",
+                            "description": "Включать метаданные страницы (автор, дата создания, версия)"
+                        },
+                        "include_attachments": {
+                            "type": "boolean",
+                            "description": "Включать информацию о вложениях"
+                        },
+                        "include_comments": {
+                            "type": "boolean",
+                            "description": "Включать комментарии к странице"
+                        }
+                    },
+                    "required": ["page_id"]
+                }
+            ),
+            create_tool_schema(
+                name="update_page",
+                description="Обновляет содержимое существующей страницы с сохранением истории версий",
+                parameters={
+                    "properties": {
+                        "page_id": {
+                            "type": "string",
+                            "description": "ID страницы для обновления"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Новый заголовок страницы"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Новое содержимое страницы в формате Confluence Storage Format"
+                        },
+                        "version": {
+                            "type": "integer",
+                            "description": "Номер версии для обновления (обязательно для предотвращения конфликтов)"
+                        },
+                        "minor_edit": {
+                            "type": "boolean",
+                            "description": "Считать ли это минорным изменением (не уведомлять подписчиков)"
+                        }
+                    },
+                    "required": ["page_id", "content"]
+                }
+            ),
+            create_tool_schema(
+                name="list_spaces",
+                description="Получает список доступных пространств в Confluence",
+                parameters={
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Максимальное количество результатов (по умолчанию 20)",
+                            "minimum": 1,
+                            "maximum": 100
+                        },
+                        "space_type": {
+                            "type": "string",
+                            "description": "Тип пространства для фильтрации",
+                            "enum": ["personal", "global"]
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "Статус пространства",
+                            "enum": ["current", "archived"]
+                        }
+                    }
+                }
+            ),
+            create_tool_schema(
+                name="get_space_details",
+                description="Получает детальную информацию о пространстве",
+                parameters={
+                    "properties": {
+                        "space_key": {
+                            "type": "string",
+                            "description": "Ключ пространства"
+                        },
+                        "include_permissions": {
+                            "type": "boolean",
+                            "description": "Включать информацию о правах доступа"
+                        }
+                    },
+                    "required": ["space_key"]
+                }
+            ),
+            create_tool_schema(
+                name="add_comment",
+                description="Добавляет комментарий к странице",
+                parameters={
+                    "properties": {
+                        "page_id": {
+                            "type": "string",
+                            "description": "ID страницы"
+                        },
+                        "comment": {
+                            "type": "string",
+                            "description": "Текст комментария"
+                        },
+                        "parent_id": {
+                            "type": "string",
+                            "description": "ID родительского комментария для ответа"
+                        }
+                    },
+                    "required": ["page_id", "comment"]
+                }
+            ),
+            create_tool_schema(
+                name="get_page_history",
+                description="Получает историю версий страницы",
+                parameters={
+                    "properties": {
+                        "page_id": {
+                            "type": "string",
+                            "description": "ID страницы"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Максимальное количество версий (по умолчанию 10)",
+                            "minimum": 1,
+                            "maximum": 50
+                        }
+                    },
+                    "required": ["page_id"]
+                }
+            ),
+            create_tool_schema(
+                name="delete_page",
+                description="Удаляет страницу или перемещает её в корзину",
+                parameters={
+                    "properties": {
+                        "page_id": {
+                            "type": "string",
+                            "description": "ID страницы для удаления"
+                        },
+                        "permanent": {
+                            "type": "boolean",
+                            "description": "Удалить навсегда (true) или переместить в корзину (false)"
+                        }
+                    },
+                    "required": ["page_id"]
+                }
+            )
+        ]
+    
+    def _get_description(self) -> str:
+        """Возвращает описание сервера"""
+        return "Atlassian Confluence MCP сервер - создание и управление документацией, страницами и знаниями в Confluence"
     
     def _load_config(self):
         """Загружает конфигурацию Atlassian"""
@@ -95,545 +314,480 @@ class AtlassianMCPServer(BaseMCPServer):
         try:
             atlassian_config = self.config_manager.get_service_config('atlassian')
             if not atlassian_config.get('enabled', False):
-                print("⚠️ Atlassian отключен в конфигурации")
+                logger.info("ℹ️ Atlassian отключен в конфигурации")
                 return
-                
-            if self.confluence_url and self.username and self.api_token:
-                self.confluence = Confluence(
-                    url=self.confluence_url,
-                    username=self.username,
-                    password=self.api_token
-                )
-                print("✅ Подключение к Confluence успешно")
-            else:
-                print("⚠️ Confluence не настроен - отсутствуют данные в конфигурации")
-        except Exception as e:
-            print(f"❌ Ошибка подключения к Confluence: {e}")
-    
-    def reconnect(self):
-        """Переподключается к Confluence с новой конфигурацией"""
-        self._load_config()
-        self._connect()
-    
-    def process_command(self, message: str) -> str:
-        """Обрабатывает команды для Confluence (упрощенный метод)"""
-        if not self.confluence:
-            return "❌ Confluence не настроен. Проверьте переменные окружения."
-        
-        message_lower = message.lower()
-        
-        try:
-            if any(word in message_lower for word in ['создать', 'новая', 'создай', 'страница']):
-                return self._create_page(message)
-            elif any(word in message_lower for word in ['найти', 'поиск', 'найди']):
-                return self._search_pages(message)
-            elif any(word in message_lower for word in ['список', 'все', 'показать', 'страницы']):
-                return self._list_pages()
-            elif any(word in message_lower for word in ['обновить', 'изменить', 'редактировать']):
-                return self._update_page(message)
-            else:
-                return self._get_help()
-        except Exception as e:
-            return f"❌ Ошибка при работе с Confluence: {str(e)}"
-    
-    def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Вызывает инструмент Confluence по имени"""
-        if not self.confluence:
-            return {"error": "Confluence не настроен"}
-        
-        try:
-            if tool_name == "search_pages":
-                return self._search_pages_tool(arguments)
-            elif tool_name == "create_page":
-                return self._create_page_tool(arguments)
-            elif tool_name == "list_pages":
-                return self._list_pages_tool(arguments)
-            elif tool_name == "get_page_content":
-                return self._get_page_content_tool(arguments)
-            elif tool_name == "update_page":
-                return self._update_page_tool(arguments)
-            else:
-                return {"error": f"Неизвестный инструмент: {tool_name}"}
-        except Exception as e:
-            return {"error": str(e)}
-    
-    def process_command_intelligent(self, message: str, intent_result, user_context: dict = None) -> str:
-        """Обрабатывает команды для Confluence на основе анализа намерений"""
-        if not self.confluence:
-            return "❌ Confluence не настроен. Проверьте переменные окружения."
-        
-        try:
-            # Временная заглушка для intent_analyzer
-            class IntentType:
-                CONFLUENCE_CREATE = "confluence_create"
-                CONFLUENCE_SEARCH = "confluence_search"
-                CONFLUENCE_LIST = "confluence_list"
             
-            # Обрабатываем на основе намерения
-            if intent_result.intent == IntentType.CONFLUENCE_CREATE:
-                return self._create_page_intelligent(message, intent_result)
-            elif intent_result.intent == IntentType.CONFLUENCE_SEARCH:
-                return self._search_pages_intelligent(message, intent_result)
-            elif intent_result.intent == IntentType.CONFLUENCE_LIST:
-                return self._list_pages_intelligent(message, intent_result)
-            else:
-                # Fallback к старому методу
-                return self.process_command(message)
-        except Exception as e:
-            return f"❌ Ошибка при работе с Confluence: {str(e)}"
-    
-    def _create_page(self, message: str) -> str:
-        """Создает новую страницу в Confluence"""
-        try:
-            # Извлекаем заголовок из сообщения
-            title = "Новая страница из чат-бота"
-            if 'заголовок' in message.lower():
-                # Простое извлечение заголовка
-                parts = message.split('заголовок')
-                if len(parts) > 1:
-                    title = parts[1].strip().strip('"').strip("'")
+            if not all([self.confluence_url, self.username, self.api_token]):
+                logger.warning("⚠️ Неполная конфигурация Atlassian")
+                return
             
-            page_data = {
-                'title': title,
-                'body': f'<p>{message}</p>',
-                'space': 'TEST',  # Замените на ваш space
-                'type': 'page'
-            }
-            
-            result = self.confluence.create_page(**page_data)
-            page_id = result.get('id')
-            page_url = f"{self.confluence_url}/pages/viewpage.action?pageId={page_id}"
-            
-            return f"✅ Создана страница: {title}\n🔗 Ссылка: {page_url}"
-        except Exception as e:
-            return f"❌ Ошибка создания страницы: {str(e)}"
-    
-    def _search_pages(self, message: str) -> str:
-        """Поиск страниц в Confluence"""
-        try:
-            # Простой поиск по тексту
-            cql = f'text ~ "{message}"'
-            pages = self.confluence.cql(cql, limit=5)
-            
-            if not pages or not pages.get('results'):
-                return "🔍 Страницы не найдены"
-            
-            result = "🔍 Найденные страницы:\n"
-            for page in pages['results']:
-                title = page.get('title', 'Без названия')
-                page_id = page.get('id')
-                page_url = f"{self.confluence_url}/pages/viewpage.action?pageId={page_id}"
-                result += f"• {title}\n  🔗 {page_url}\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка поиска: {str(e)}"
-    
-    def _list_pages(self) -> str:
-        """Список последних страниц"""
-        try:
-            # Получаем последние страницы
-            pages = self.confluence.get_all_pages_from_space('TEST', limit=10)  # Замените на ваш space
-            
-            if not pages:
-                return "📋 Страниц не найдено"
-            
-            result = "📋 Последние страницы:\n"
-            for page in pages:
-                title = page.get('title', 'Без названия')
-                page_id = page.get('id')
-                page_url = f"{self.confluence_url}/pages/viewpage.action?pageId={page_id}"
-                result += f"• {title}\n  🔗 {page_url}\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка получения списка: {str(e)}"
-    
-    def _update_page(self, message: str) -> str:
-        """Обновляет существующую страницу"""
-        try:
-            # Простое извлечение ID страницы из сообщения
-            words = message.split()
-            page_id = None
-            for word in words:
-                if word.isdigit():
-                    page_id = word
-                    break
-            
-            if not page_id:
-                return "❌ Не указан ID страницы для обновления"
-            
-            # Получаем текущую страницу
-            page = self.confluence.get_page_by_id(page_id)
-            if not page:
-                return f"❌ Страница с ID {page_id} не найдена"
-            
-            # Обновляем содержимое
-            new_content = f"{page['body']['storage']['value']}\n\n<p>Обновлено из чат-бота: {message}</p>"
-            
-            self.confluence.update_page(
-                page_id=page_id,
-                title=page['title'],
-                body=new_content
+            # Подключение к Confluence
+            self.confluence = Confluence(
+                url=self.confluence_url,
+                username=self.username,
+                password=self.api_token
             )
             
-            return f"✅ Страница {page['title']} обновлена"
+            # Проверяем подключение
+            self.confluence.get_current_user()
+            logger.info(f"✅ Подключение к Confluence успешно: {self.confluence_url}")
+            
         except Exception as e:
-            return f"❌ Ошибка обновления страницы: {str(e)}"
+            logger.error(f"❌ Ошибка подключения к Confluence: {e}")
+            self.confluence = None
     
-    def _get_help(self) -> str:
-        """Справка по командам Confluence"""
-        return """
-🔧 Команды для работы с Confluence:
-
-• Создать страницу: "создай страницу в confluence"
-• Найти страницы: "найди страницы по ключевому слову"
-• Список страниц: "покажи все страницы"
-• Обновить страницу: "обнови страницу с ID 123456"
-
-Примеры:
-- "создай страницу с заголовком 'Новая документация'"
-- "найди все страницы про API"
-- "покажи последние страницы"
-- "обнови страницу 123456 новым содержимым"
-        """
-    
-    def _create_page_intelligent(self, message: str, intent_result) -> str:
-        """Создает новую страницу в Confluence на основе анализа намерений"""
+    def _test_connection(self) -> bool:
+        """Тестирует подключение к Confluence"""
+        if not self.confluence:
+            return False
+        
         try:
-            entities = intent_result.entities
-            page_title = entities.get('page_title', '')
+            self.confluence.get_current_user()
+            return True
+        except Exception:
+            return False
+    
+    # ============================================================================
+    # ИНСТРУМЕНТЫ ATLASSIAN CONFLUENCE
+    # ============================================================================
+    
+    def search_pages(self, query: str, space_key: str = None, limit: int = 20,
+                    content_type: str = None) -> Dict[str, Any]:
+        """Ищет страницы в Confluence по текстовому запросу"""
+        try:
+            if not self.confluence:
+                return format_tool_response(False, "Confluence не подключен")
             
-            # Если не указан заголовок, извлекаем из сообщения
-            if not page_title:
-                # Ищем заголовок в сообщении
-                import re
-                title_match = re.search(r'заголовком\s+["\']([^"\']+)["\']', message, re.IGNORECASE)
-                if title_match:
-                    page_title = title_match.group(1)
-                else:
-                    page_title = f"Страница из чат-бота: {message[:50]}..."
-            
-            # Извлекаем пространство из сущностей или используем по умолчанию
-            space_name = entities.get('space_name', 'TEST')
-            
-            # Создаем содержимое страницы
-            content = f"""
-<h2>Создано из чат-бота</h2>
-<p><strong>Исходное сообщение:</strong> {message}</p>
-<p><strong>Дата создания:</strong> {self._get_current_date()}</p>
-<p><strong>Автор:</strong> AI Ассистент</p>
-            """
-            
-            page_data = {
-                'title': page_title,
-                'body': content,
-                'space': space_name,
-                'type': 'page'
+            # Параметры поиска
+            params = {
+                'cql': f'text ~ "{query}"',
+                'limit': limit
             }
             
-            result = self.confluence.create_page(**page_data)
-            page_id = result.get('id')
-            page_url = f"{self.confluence_url}/pages/viewpage.action?pageId={page_id}"
+            if space_key:
+                params['cql'] = f'space = "{space_key}" AND text ~ "{query}"'
             
-            return f"✅ Создана страница: **{page_title}**\n\n🔗 [Открыть страницу]({page_url})\n📁 Пространство: {space_name}\n📝 Содержимое: {message[:100]}..."
-        except Exception as e:
-            return f"❌ Ошибка создания страницы: {str(e)}"
-    
-    def _search_pages_intelligent(self, message: str, intent_result) -> str:
-        """Поиск страниц в Confluence на основе анализа намерений"""
-        try:
-            entities = intent_result.entities
-            search_query = entities.get('search_query', '')
-            
-            # Используем поисковый запрос из сущностей или весь текст сообщения
-            query = search_query if search_query else message
-            
-            # Определяем количество результатов
-            import re
-            count_match = re.search(r'(\d+)', message)
-            limit = int(count_match.group(1)) if count_match else 5
+            if content_type:
+                params['cql'] += f' AND type = "{content_type}"'
             
             # Выполняем поиск
-            cql = f'text ~ "{query}"'
-            pages = self.confluence.cql(cql, limit=limit)
+            results = self.confluence.cql(params['cql'], limit=limit)
             
-            if not pages or not pages.get('results'):
-                return f"🔍 Страницы по запросу '{query}' не найдены"
+            # Форматируем результаты
+            pages = []
+            for result in results.get('results', []):
+                page_data = {
+                    "id": result.get('id'),
+                    "title": result.get('title'),
+                    "type": result.get('type'),
+                    "space_key": result.get('space', {}).get('key'),
+                    "space_name": result.get('space', {}).get('name'),
+                    "url": f"{self.confluence_url}/pages/viewpage.action?pageId={result.get('id')}",
+                    "created": result.get('created'),
+                    "modified": result.get('modified')
+                }
+                pages.append(page_data)
             
-            result = f"🔍 Найденные страницы по запросу '{query}':\n\n"
-            for page in pages['results']:
-                title = page.get('title', 'Без названия')
-                page_id = page.get('id')
-                space = page.get('space', {}).get('name', 'Неизвестно')
-                page_url = f"{self.confluence_url}/pages/viewpage.action?pageId={page_id}"
-                
-                result += f"• **{title}**\n"
-                result += f"  📁 Пространство: {space}\n"
-                result += f"  🔗 [Открыть страницу]({page_url})\n\n"
+            logger.info(f"✅ Найдено страниц: {len(pages)}")
+            return format_tool_response(
+                True,
+                f"Найдено {len(pages)} страниц",
+                {
+                    "total": len(pages),
+                    "pages": pages,
+                    "query": query
+                }
+            )
             
-            return result
         except Exception as e:
-            return f"❌ Ошибка поиска: {str(e)}"
+            logger.error(f"❌ Ошибка поиска страниц: {e}")
+            return format_tool_response(False, f"Ошибка поиска страниц: {str(e)}")
     
-    def _list_pages_intelligent(self, message: str, intent_result) -> str:
-        """Список страниц Confluence на основе анализа намерений"""
+    def create_page(self, title: str, content: str, space_key: str,
+                   parent_page_id: str = None, page_type: str = "page",
+                   labels: List[str] = None) -> Dict[str, Any]:
+        """Создает новую страницу в Confluence"""
         try:
-            entities = intent_result.entities
-            space_name = entities.get('space_name', 'TEST')
+            if not self.confluence:
+                return format_tool_response(False, "Confluence не подключен")
             
-            # Определяем количество страниц
-            import re
-            count_match = re.search(r'(\d+)', message)
-            limit = int(count_match.group(1)) if count_match else 10
-            
-            # Получаем страницы из указанного пространства
-            pages = self.confluence.get_all_pages_from_space(space_name, limit=limit)
-            
-            if not pages:
-                return f"📋 В пространстве '{space_name}' нет страниц"
-            
-            result = f"📋 Последние {len(pages)} страниц в пространстве **{space_name}**:\n\n"
-            for page in pages:
-                title = page.get('title', 'Без названия')
-                page_id = page.get('id')
-                page_url = f"{self.confluence_url}/pages/viewpage.action?pageId={page_id}"
-                created = page.get('created', '')
-                author = page.get('version', {}).get('by', {}).get('displayName', 'Неизвестно')
-                
-                result += f"• **{title}**\n"
-                result += f"  👤 Автор: {author}\n"
-                result += f"  📅 Создана: {created[:10] if created else 'Неизвестно'}\n"
-                result += f"  🔗 [Открыть страницу]({page_url})\n\n"
-            
-            return result
-        except Exception as e:
-            return f"❌ Ошибка получения списка: {str(e)}"
-    
-    def _get_current_date(self) -> str:
-        """Возвращает текущую дату в формате строки"""
-        from datetime import datetime
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    def _search_pages_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Ищет страницы через инструмент"""
-        try:
-            query = arguments.get('query', '')
-            space_key = arguments.get('space_key')
-            limit = arguments.get('limit', 5)
-            
-            if not query:
-                return {'error': 'Не указан поисковый запрос'}
-            
-            # Формируем CQL запрос
-            cql = f'text ~ "{query}"'
-            if space_key:
-                cql += f' AND space = "{space_key}"'
-            
-            pages = self.confluence.cql(cql, limit=limit)
-            
-            if not pages or not pages.get('results'):
-                return {'results': []}
-            
-            result = []
-            for page in pages['results']:
-                result.append({
-                    'id': page.get('id'),
-                    'title': page.get('title', 'Без названия'),
-                    'space': page.get('space', {}).get('name', 'Неизвестно'),
-                    'url': f"{self.confluence_url}/pages/viewpage.action?pageId={page.get('id')}",
-                    'created': page.get('created'),
-                    'last_modified': page.get('last_modified')
-                })
-            
-            return {'results': result}
-        except Exception as e:
-            return {'error': str(e)}
-    
-    def _create_page_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Создает страницу через инструмент"""
-        try:
-            title = arguments.get('title', '')
-            content = arguments.get('content', '')
-            space_key = arguments.get('space_key', 'TEST')
-            parent_page_id = arguments.get('parent_page_id')
-            
-            if not all([title, content, space_key]):
-                return {'error': 'Не указаны обязательные параметры: title, content, space_key'}
-            
-            # Формируем HTML контент
-            html_content = f"<p>{content}</p>"
-            
+            # Параметры для создания страницы
             page_data = {
                 'title': title,
-                'body': html_content,
-                'space': space_key,
-                'type': 'page'
+                'space': {'key': space_key},
+                'body': {
+                    'storage': {
+                        'value': content,
+                        'representation': 'storage'
+                    }
+                },
+                'type': page_type
             }
             
             if parent_page_id:
-                page_data['parent_id'] = parent_page_id
+                page_data['ancestors'] = [{'id': parent_page_id}]
             
-            result = self.confluence.create_page(**page_data)
-            page_id = result.get('id')
+            if labels:
+                page_data['metadata'] = {'labels': [{'name': label} for label in labels]}
             
-            return {
-                'success': True,
-                'id': page_id,
-                'title': title,
-                'space': space_key,
-                'url': f"{self.confluence_url}/pages/viewpage.action?pageId={page_id}"
-            }
+            # Создаем страницу
+            new_page = self.confluence.create_page(**page_data)
+            
+            logger.info(f"✅ Создана страница: {new_page['id']}")
+            return format_tool_response(
+                True,
+                f"Страница '{title}' создана успешно",
+                {
+                    "page_id": new_page['id'],
+                    "title": new_page['title'],
+                    "space_key": space_key,
+                    "url": f"{self.confluence_url}/pages/viewpage.action?pageId={new_page['id']}"
+                }
+            )
+            
         except Exception as e:
-            return {'error': str(e)}
+            logger.error(f"❌ Ошибка создания страницы: {e}")
+            return format_tool_response(False, f"Ошибка создания страницы: {str(e)}")
     
-    def _list_pages_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Получает список страниц через инструмент"""
+    def list_pages(self, space_key: str, limit: int = 20, page_type: str = None,
+                  sort: str = "modified", order: str = "desc") -> Dict[str, Any]:
+        """Получает список страниц пространства"""
         try:
-            space_key = arguments.get('space_key', 'TEST')
-            limit = arguments.get('limit', 10)
+            if not self.confluence:
+                return format_tool_response(False, "Confluence не подключен")
             
-            pages = self.confluence.get_all_pages_from_space(space_key, limit=limit)
+            # Получаем страницы пространства
+            pages = self.confluence.get_all_pages_from_space(
+                space_key,
+                start=0,
+                limit=limit,
+                status='current',
+                expand='version'
+            )
             
-            if not pages:
-                return {'pages': []}
+            # Фильтруем по типу, если указан
+            if page_type:
+                pages = [p for p in pages if p.get('type') == page_type]
             
-            result = []
+            # Сортируем
+            reverse = order == "desc"
+            if sort == "title":
+                pages.sort(key=lambda x: x.get('title', ''), reverse=reverse)
+            elif sort == "created":
+                pages.sort(key=lambda x: x.get('version', {}).get('when', ''), reverse=reverse)
+            else:  # modified
+                pages.sort(key=lambda x: x.get('version', {}).get('when', ''), reverse=reverse)
+            
+            # Форматируем результаты
+            page_list = []
             for page in pages:
-                result.append({
-                    'id': page.get('id'),
-                    'title': page.get('title', 'Без названия'),
-                    'space': space_key,
-                    'url': f"{self.confluence_url}/pages/viewpage.action?pageId={page.get('id')}",
-                    'created': page.get('created'),
-                    'last_modified': page.get('version', {}).get('when'),
-                    'author': page.get('version', {}).get('by', {}).get('displayName', 'Неизвестно')
-                })
+                page_data = {
+                    "id": page.get('id'),
+                    "title": page.get('title'),
+                    "type": page.get('type'),
+                    "space_key": space_key,
+                    "url": f"{self.confluence_url}/pages/viewpage.action?pageId={page.get('id')}",
+                    "created": page.get('version', {}).get('when'),
+                    "version": page.get('version', {}).get('number')
+                }
+                page_list.append(page_data)
             
-            return {'pages': result, 'space': space_key}
+            logger.info(f"✅ Получено страниц: {len(page_list)}")
+            return format_tool_response(True, f"Получено страниц: {len(page_list)}", page_list)
+            
         except Exception as e:
-            return {'error': str(e)}
+            logger.error(f"❌ Ошибка получения списка страниц: {e}")
+            return format_tool_response(False, f"Ошибка получения списка страниц: {str(e)}")
     
-    def _get_page_content_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Получает содержимое страницы через инструмент"""
+    def get_page_content(self, page_id: str, include_metadata: bool = False,
+                        include_attachments: bool = False, include_comments: bool = False) -> Dict[str, Any]:
+        """Получает содержимое и метаданные страницы"""
         try:
-            page_id = arguments.get('page_id')
+            if not self.confluence:
+                return format_tool_response(False, "Confluence не подключен")
             
-            if not page_id:
-                return {'error': 'Не указан ID страницы'}
+            # Получаем страницу
+            page = self.confluence.get_page_by_id(
+                page_id,
+                expand='body.storage,version,space,ancestors'
+            )
             
-            page = self.confluence.get_page_by_id(page_id)
-            
-            if not page:
-                return {'error': f'Страница с ID {page_id} не найдена'}
-            
-            return {
-                'id': page.get('id'),
-                'title': page.get('title'),
-                'content': page.get('body', {}).get('storage', {}).get('value', ''),
-                'space': page.get('space', {}).get('name'),
-                'url': f"{self.confluence_url}/pages/viewpage.action?pageId={page_id}",
-                'created': page.get('created'),
-                'last_modified': page.get('version', {}).get('when'),
-                'author': page.get('version', {}).get('by', {}).get('displayName', 'Неизвестно')
+            # Базовые данные
+            page_data = {
+                "id": page.get('id'),
+                "title": page.get('title'),
+                "content": page.get('body', {}).get('storage', {}).get('value', ''),
+                "space_key": page.get('space', {}).get('key'),
+                "space_name": page.get('space', {}).get('name'),
+                "url": f"{self.confluence_url}/pages/viewpage.action?pageId={page_id}",
+                "version": page.get('version', {}).get('number'),
+                "created": page.get('version', {}).get('when')
             }
+            
+            # Метаданные
+            if include_metadata:
+                page_data["metadata"] = {
+                    "author": page.get('version', {}).get('by', {}).get('displayName'),
+                    "created_by": page.get('version', {}).get('by', {}).get('displayName'),
+                    "version_number": page.get('version', {}).get('number'),
+                    "ancestors": [
+                        {
+                            "id": ancestor.get('id'),
+                            "title": ancestor.get('title')
+                        }
+                        for ancestor in page.get('ancestors', [])
+                    ]
+                }
+            
+            # Вложения
+            if include_attachments:
+                try:
+                    attachments = self.confluence.get_attachments_from_content(page_id)
+                    page_data["attachments"] = [
+                        {
+                            "id": att.get('id'),
+                            "title": att.get('title'),
+                            "file_size": att.get('extensions', {}).get('fileSize'),
+                            "media_type": att.get('extensions', {}).get('mediaType'),
+                            "url": f"{self.confluence_url}{att.get('_links', {}).get('download', '')}"
+                        }
+                        for att in attachments
+                    ]
+                except Exception:
+                    page_data["attachments"] = "Недоступно"
+            
+            # Комментарии
+            if include_comments:
+                try:
+                    comments = self.confluence.get_page_comments(page_id)
+                    page_data["comments"] = [
+                        {
+                            "id": comment.get('id'),
+                            "content": comment.get('body', {}).get('storage', {}).get('value', ''),
+                            "author": comment.get('version', {}).get('by', {}).get('displayName'),
+                            "created": comment.get('version', {}).get('when')
+                        }
+                        for comment in comments
+                    ]
+                except Exception:
+                    page_data["comments"] = "Недоступно"
+            
+            logger.info(f"✅ Получено содержимое страницы: {page_id}")
+            return format_tool_response(True, "Содержимое страницы получено", page_data)
+            
         except Exception as e:
-            return {'error': str(e)}
+            logger.error(f"❌ Ошибка получения содержимого страницы: {e}")
+            return format_tool_response(False, f"Ошибка получения содержимого страницы: {str(e)}")
     
-    def _update_page_tool(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Обновляет страницу через инструмент"""
+    def update_page(self, page_id: str, content: str, title: str = None,
+                   version: int = None, minor_edit: bool = False) -> Dict[str, Any]:
+        """Обновляет содержимое существующей страницы"""
         try:
-            page_id = arguments.get('page_id')
-            title = arguments.get('title')
-            content = arguments.get('content', '')
+            if not self.confluence:
+                return format_tool_response(False, "Confluence не подключен")
             
-            if not page_id or not content:
-                return {'error': 'Не указаны обязательные параметры: page_id, content'}
+            # Получаем текущую страницу для версии
+            if not version:
+                current_page = self.confluence.get_page_by_id(page_id, expand='version')
+                version = current_page.get('version', {}).get('number')
             
-            # Получаем текущую страницу
-            page = self.confluence.get_page_by_id(page_id)
-            if not page:
-                return {'error': f'Страница с ID {page_id} не найдена'}
-            
-            # Формируем HTML контент
-            html_content = f"<p>{content}</p>"
-            
-            # Обновляем страницу
+            # Параметры для обновления
             update_data = {
-                'page_id': page_id,
-                'body': html_content
+                'id': page_id,
+                'version': {'number': version + 1},
+                'body': {
+                    'storage': {
+                        'value': content,
+                        'representation': 'storage'
+                    }
+                },
+                'minorEdit': minor_edit
             }
             
             if title:
                 update_data['title'] = title
             
-            self.confluence.update_page(**update_data)
+            # Обновляем страницу
+            updated_page = self.confluence.update_page(**update_data)
             
-            return {
-                'success': True,
-                'id': page_id,
-                'title': title or page.get('title'),
-                'url': f"{self.confluence_url}/pages/viewpage.action?pageId={page_id}"
-            }
+            logger.info(f"✅ Страница {page_id} обновлена")
+            return format_tool_response(
+                True,
+                f"Страница {page_id} обновлена успешно",
+                {
+                    "page_id": page_id,
+                    "new_version": updated_page.get('version', {}).get('number'),
+                    "url": f"{self.confluence_url}/pages/viewpage.action?pageId={page_id}"
+                }
+            )
+            
         except Exception as e:
-            return {'error': str(e)}
-
-    def get_tools(self) -> List[Dict[str, Any]]:
-        """Возвращает список доступных инструментов Confluence"""
-        return [
-            {
-                "name": "search_pages",
-                "description": "Ищет страницы в Confluence",
-                "parameters": {
-                    "query": {"type": "string", "description": "Поисковый запрос"},
-                    "space_key": {"type": "string", "description": "Ключ пространства"},
-                    "limit": {"type": "integer", "description": "Максимальное количество результатов"}
-                }
-            },
-            {
-                "name": "create_page",
-                "description": "Создает новую страницу в Confluence",
-                "parameters": {
-                    "title": {"type": "string", "description": "Заголовок страницы"},
-                    "content": {"type": "string", "description": "Содержимое страницы"},
-                    "space_key": {"type": "string", "description": "Ключ пространства"},
-                    "parent_page_id": {"type": "string", "description": "ID родительской страницы"}
-                }
-            },
-            {
-                "name": "list_pages",
-                "description": "Получает список страниц пространства",
-                "parameters": {
-                    "space_key": {"type": "string", "description": "Ключ пространства"},
-                    "limit": {"type": "integer", "description": "Максимальное количество результатов"}
-                }
-            },
-            {
-                "name": "get_page_content",
-                "description": "Получает содержимое страницы",
-                "parameters": {
-                    "page_id": {"type": "string", "description": "ID страницы"}
-                }
-            },
-            {
-                "name": "update_page",
-                "description": "Обновляет содержимое страницы",
-                "parameters": {
-                    "page_id": {"type": "string", "description": "ID страницы"},
-                    "title": {"type": "string", "description": "Новый заголовок"},
-                    "content": {"type": "string", "description": "Новое содержимое"}
-                }
-            }
-        ]
-
-    def check_health(self) -> Dict[str, Any]:
-        """Проверка состояния подключения к Confluence"""
+            logger.error(f"❌ Ошибка обновления страницы: {e}")
+            return format_tool_response(False, f"Ошибка обновления страницы: {str(e)}")
+    
+    def list_spaces(self, limit: int = 20, space_type: str = None,
+                   status: str = "current") -> Dict[str, Any]:
+        """Получает список доступных пространств"""
         try:
-            if self.confluence:
-                # Проверяем подключение
-                self.confluence.get_spaces()
-                return {'status': 'connected', 'url': self.confluence_url}
-            else:
-                return {'status': 'not_configured', 'url': None}
+            if not self.confluence:
+                return format_tool_response(False, "Confluence не подключен")
+            
+            # Получаем пространства
+            spaces = self.confluence.get_all_spaces(start=0, limit=limit, expand='description')
+            
+            # Фильтруем по типу и статусу
+            if space_type:
+                spaces = [s for s in spaces if s.get('type') == space_type]
+            
+            if status:
+                spaces = [s for s in spaces if s.get('status') == status]
+            
+            # Форматируем результаты
+            space_list = []
+            for space in spaces:
+                space_data = {
+                    "key": space.get('key'),
+                    "name": space.get('name'),
+                    "type": space.get('type'),
+                    "status": space.get('status'),
+                    "description": space.get('description', {}).get('plain', {}).get('value', ''),
+                    "url": f"{self.confluence_url}/spaces/{space.get('key')}"
+                }
+                space_list.append(space_data)
+            
+            logger.info(f"✅ Получено пространств: {len(space_list)}")
+            return format_tool_response(True, f"Получено пространств: {len(space_list)}", space_list)
+            
         except Exception as e:
-            return {'status': 'error', 'error': str(e), 'url': self.confluence_url}
+            logger.error(f"❌ Ошибка получения списка пространств: {e}")
+            return format_tool_response(False, f"Ошибка получения списка пространств: {str(e)}")
+    
+    def get_space_details(self, space_key: str, include_permissions: bool = False) -> Dict[str, Any]:
+        """Получает детальную информацию о пространстве"""
+        try:
+            if not self.confluence:
+                return format_tool_response(False, "Confluence не подключен")
+            
+            # Получаем пространство
+            space = self.confluence.get_space(space_key, expand='description,homepage')
+            
+            # Базовые данные
+            space_data = {
+                "key": space.get('key'),
+                "name": space.get('name'),
+                "type": space.get('type'),
+                "status": space.get('status'),
+                "description": space.get('description', {}).get('plain', {}).get('value', ''),
+                "url": f"{self.confluence_url}/spaces/{space_key}",
+                "homepage_id": space.get('homepage', {}).get('id')
+            }
+            
+            # Права доступа
+            if include_permissions:
+                try:
+                    permissions = self.confluence.get_space_permissions(space_key)
+                    space_data["permissions"] = permissions
+                except Exception:
+                    space_data["permissions"] = "Недоступно"
+            
+            logger.info(f"✅ Получены детали пространства: {space_key}")
+            return format_tool_response(True, "Детали пространства получены", space_data)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения деталей пространства: {e}")
+            return format_tool_response(False, f"Ошибка получения деталей пространства: {str(e)}")
+    
+    def add_comment(self, page_id: str, comment: str, parent_id: str = None) -> Dict[str, Any]:
+        """Добавляет комментарий к странице"""
+        try:
+            if not self.confluence:
+                return format_tool_response(False, "Confluence не подключен")
+            
+            # Параметры для создания комментария
+            comment_data = {
+                'pageId': page_id,
+                'body': {
+                    'storage': {
+                        'value': comment,
+                        'representation': 'storage'
+                    }
+                }
+            }
+            
+            if parent_id:
+                comment_data['parentId'] = parent_id
+            
+            # Создаем комментарий
+            new_comment = self.confluence.add_comment(**comment_data)
+            
+            logger.info(f"✅ Комментарий добавлен к странице: {page_id}")
+            return format_tool_response(
+                True,
+                f"Комментарий добавлен к странице {page_id}",
+                {
+                    "comment_id": new_comment.get('id'),
+                    "page_id": page_id,
+                    "url": f"{self.confluence_url}/pages/viewpage.action?pageId={page_id}"
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка добавления комментария: {e}")
+            return format_tool_response(False, f"Ошибка добавления комментария: {str(e)}")
+    
+    def get_page_history(self, page_id: str, limit: int = 10) -> Dict[str, Any]:
+        """Получает историю версий страницы"""
+        try:
+            if not self.confluence:
+                return format_tool_response(False, "Confluence не подключен")
+            
+            # Получаем историю страницы
+            history = self.confluence.get_page_history(page_id, limit=limit)
+            
+            # Форматируем результаты
+            versions = []
+            for version in history.get('results', []):
+                version_data = {
+                    "number": version.get('number'),
+                    "created": version.get('when'),
+                    "author": version.get('by', {}).get('displayName'),
+                    "message": version.get('message', ''),
+                    "minor_edit": version.get('minorEdit', False)
+                }
+                versions.append(version_data)
+            
+            logger.info(f"✅ Получена история страницы: {len(versions)} версий")
+            return format_tool_response(True, f"Получена история страницы: {len(versions)} версий", versions)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения истории страницы: {e}")
+            return format_tool_response(False, f"Ошибка получения истории страницы: {str(e)}")
+    
+    def delete_page(self, page_id: str, permanent: bool = False) -> Dict[str, Any]:
+        """Удаляет страницу или перемещает её в корзину"""
+        try:
+            if not self.confluence:
+                return format_tool_response(False, "Confluence не подключен")
+            
+            if permanent:
+                # Удаляем навсегда
+                self.confluence.remove_page(page_id)
+                message = f"Страница {page_id} удалена навсегда"
+            else:
+                # Перемещаем в корзину
+                self.confluence.remove_page(page_id, status='trashed')
+                message = f"Страница {page_id} перемещена в корзину"
+            
+            logger.info(f"✅ {message}")
+            return format_tool_response(True, message)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка удаления страницы: {e}")
+            return format_tool_response(False, f"Ошибка удаления страницы: {str(e)}")
+
+# ============================================================================
+# ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+# ============================================================================
+
+# Глобальный экземпляр Atlassian сервера
+atlassian_server = AtlassianFastMCPServer()

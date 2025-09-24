@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any, List
 
 class ChatMessage(BaseModel):
     message: str
+    use_react: bool = False  # Флаг для использования ReAct агента
 
 class ChatResponse(BaseModel):
     response: str

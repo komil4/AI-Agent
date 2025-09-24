@@ -1,5 +1,7 @@
 # MCP Servers package
 
+from .server_discovery import server_discovery
+
 class BaseMCPServer:
     """Базовый класс для MCP серверов"""
     
@@ -25,3 +27,15 @@ class BaseMCPServer:
             return service_config.get('enabled', False)
         except Exception:
             return False
+
+def get_discovered_servers():
+    """Возвращает словарь обнаруженных серверов"""
+    return server_discovery.get_discovered_servers()
+
+def get_server_names():
+    """Возвращает список имен обнаруженных серверов"""
+    return server_discovery.get_server_names()
+
+def create_server_instance(server_name: str):
+    """Создает экземпляр сервера по имени"""
+    return server_discovery.create_server_instance(server_name)

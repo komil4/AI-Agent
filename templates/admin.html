@@ -211,17 +211,8 @@
                             <button class="btn btn-outline-primary btn-sm" onclick="showSection('active_directory')">
                                 <i class="fas fa-users"></i> Active Directory
                             </button>
-                            <button class="btn btn-outline-info btn-sm" onclick="showSection('jira')">
-                                <i class="fas fa-tasks"></i> Jira
-                            </button>
-                            <button class="btn btn-outline-success btn-sm" onclick="showSection('atlassian')">
-                                <i class="fas fa-file-alt"></i> Confluence
-                            </button>
-                            <button class="btn btn-outline-warning btn-sm" onclick="showSection('gitlab')">
-                                <i class="fas fa-code-branch"></i> GitLab
-                            </button>
-                            <button class="btn btn-outline-info btn-sm" onclick="showSection('onec')">
-                                <i class="fas fa-database"></i> 1С
+                            <button class="btn btn-outline-primary btn-sm" onclick="showSection('mcp_servers')">
+                                <i class="fas fa-server"></i> MCP Серверы
                             </button>
                             <button class="btn btn-outline-success btn-sm" onclick="showSection('file')">
                                 <i class="fas fa-folder"></i> Файлы
@@ -324,7 +315,27 @@
             try {
                 console.log('Loading configuration...');
                 const response = await fetch('/api/admin/config');
-                currentConfig = await response.json();
+                const data = await response.json();
+                currentConfig = data.config;
+                
+                // Загружаем динамические настройки MCP серверов
+                if (data.mcp_servers) {
+                    sectionConfigs['mcp_servers'] = [];
+                    
+                    for (const [serverName, serverInfo] of Object.entries(data.mcp_servers)) {
+                        sectionConfigs['mcp_servers'].push({
+                            key: serverName,
+                            label: serverInfo.display_name || `${serverName} MCP`,
+                            type: 'section',
+                            icon: serverInfo.icon || 'fas fa-server',
+                            description: serverInfo.description || `MCP сервер для ${serverName}`,
+                            fields: serverInfo.fields || []
+                        });
+                    }
+                    
+                    console.log('✅ Динамические настройки MCP серверов загружены:', sectionConfigs['mcp_servers']);
+                }
+                
                 console.log('Loaded config:', currentConfig);
                 showSection('active_directory');
             } catch (error) {
@@ -346,9 +357,127 @@
                 return;
             }
             
+            if (section === 'mcp_servers') {
+                content.innerHTML = getMCPServersForm();
+                return;
+            }
+            
             const config = currentConfig[section] || {};
             console.log(`Showing section: ${section}`, config);
             content.innerHTML = getConfigForm(section, config);
+        }
+
+        // Get MCP servers form
+        function getMCPServersForm() {
+            const mcpServers = sectionConfigs['mcp_servers'] || [];
+            
+            let formHTML = `
+                <div class="card config-card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-server"></i> MCP Серверы
+                            <span class="status-indicator status-enabled"></span>
+                            <small>Динамические настройки</small>
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            ${mcpServers.map(server => {
+                                const config = currentConfig[server.key] || {};
+                                const statusClass = config.enabled ? 'status-enabled' : 'status-disabled';
+                                const statusText = config.enabled ? 'Включен' : 'Отключен';
+                                
+                                return `
+                                    <div class="col-md-6 mb-3">
+                                        <div class="card">
+                                            <div class="card-header">
+                                                <h6 class="mb-0">
+                                                    <i class="${server.icon || 'fas fa-server'}"></i> ${server.label}
+                                                    <span class="status-indicator ${statusClass}"></span>
+                                                    <small>${statusText}</small>
+                                                </h6>
+                                            </div>
+                                            <div class="card-body">
+                                                <p class="text-muted">${server.description || ''}</p>
+                                                <button type="button" class="btn btn-primary btn-sm" 
+                                                        onclick="showMCPServerConfig('${server.key}')">
+                                                    <i class="fas fa-cog"></i> Настроить
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            return formHTML;
+        }
+        
+        // Show MCP server configuration
+        function showMCPServerConfig(serverName) {
+            const serverInfo = sectionConfigs['mcp_servers'].find(s => s.key === serverName);
+            const config = currentConfig[serverName] || {};
+            
+            if (!serverInfo) {
+                console.error(`Сервер ${serverName} не найден`);
+                return;
+            }
+            
+            let formHTML = `
+                <div class="card config-card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="${serverInfo.icon || 'fas fa-server'}"></i> ${serverInfo.label}
+                            <button type="button" class="btn btn-sm btn-outline-light float-end" onclick="showSection('mcp_servers')">
+                                <i class="fas fa-arrow-left"></i> Назад
+                            </button>
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="configForm_${serverName}">
+                            <div class="row">
+                                ${serverInfo.fields.map(field => `
+                                    <div class="col-md-6 mb-3">
+                                        <label for="${field.key}" class="form-label">${field.label}</label>
+                                        ${field.type === 'checkbox' ? `
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="${field.key}" 
+                                                       ${config[field.key] ? 'checked' : ''}>
+                                                <label class="form-check-label" for="${field.key}">
+                                                    ${field.label}
+                                                </label>
+                                            </div>
+                                        ` : `
+                                            <input type="${field.type}" class="form-control" id="${field.key}" 
+                                                   value="${config[field.key] || ''}" 
+                                                   placeholder="${field.placeholder || ''}">
+                                        `}
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <button type="button" class="btn btn-warning" onclick="testConnection('${serverName}')">
+                                    <i class="fas fa-plug"></i> Тест подключения
+                                </button>
+                                <button type="submit" class="btn btn-success">
+                                    <i class="fas fa-save"></i> Сохранить
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('configContent').innerHTML = formHTML;
+            
+            // Добавляем обработчик формы
+            document.getElementById(`configForm_${serverName}`).addEventListener('submit', function(e) {
+                e.preventDefault();
+                saveConfig(serverName);
+            });
         }
 
         // Get configuration form
@@ -356,10 +485,7 @@
             const sectionNames = {
                 'database': 'База данных',
                 'active_directory': 'Active Directory',
-                'jira': 'Jira',
-                'atlassian': 'Atlassian Confluence',
-                'gitlab': 'GitLab',
-                'onec': '1С',
+                'mcp_servers': 'MCP Серверы',
                 'file': 'Файловая система',
                 'llm': 'LLM Сервер',
                 'redis': 'Redis'
@@ -382,30 +508,6 @@
                     { key: 'service_password', label: 'Service Password', type: 'password', placeholder: 'пароль для service account' },
                     { key: 'enabled', label: 'Включено', type: 'checkbox' }
                 ],
-                'jira': [
-                    { key: 'url', label: 'URL', type: 'text', placeholder: 'https://domain.atlassian.net' },
-                    { key: 'username', label: 'Имя пользователя', type: 'text', placeholder: 'user@domain.com' },
-                    { key: 'api_token', label: 'API Токен', type: 'password', placeholder: 'ваш-api-токен' },
-                    { key: 'enabled', label: 'Включено', type: 'checkbox' }
-                ],
-                'atlassian': [
-                    { key: 'url', label: 'URL', type: 'text', placeholder: 'https://domain.atlassian.net' },
-                    { key: 'username', label: 'Имя пользователя', type: 'text', placeholder: 'user@domain.com' },
-                    { key: 'api_token', label: 'API Токен', type: 'password', placeholder: 'ваш-api-токен' },
-                    { key: 'enabled', label: 'Включено', type: 'checkbox' }
-                ],
-                'gitlab': [
-                    { key: 'url', label: 'URL', type: 'text', placeholder: 'https://gitlab.com' },
-                    { key: 'token', label: 'Токен', type: 'password', placeholder: 'ваш-gitlab-токен' },
-                    { key: 'enabled', label: 'Включено', type: 'checkbox' }
-                ],
-                'onec': [
-                    { key: 'url', label: 'URL 1С', type: 'text', placeholder: 'http://localhost:8080' },
-                    { key: 'api_path', label: 'API Путь', type: 'text', placeholder: '/api/tasks' },
-                    { key: 'username', label: 'Пользователь', type: 'text', placeholder: 'admin' },
-                    { key: 'password', label: 'Пароль', type: 'password', placeholder: 'password' },
-                    { key: 'enabled', label: 'Включено', type: 'checkbox' }
-                ],
                 'file': [
                     { key: 'base_path', label: 'Базовая директория', type: 'text', placeholder: '/tmp' },
                     { key: 'enabled', label: 'Включено', type: 'checkbox' }
@@ -417,13 +519,7 @@
                     { key: 'url', label: 'URL', type: 'text', placeholder: 'redis://localhost:6379' },
                     { key: 'enabled', label: 'Включено', type: 'checkbox' }
                 ],
-                'mcp_servers': [
-                    { key: 'jira', label: 'Jira MCP', type: 'section' },
-                    { key: 'gitlab', label: 'GitLab MCP', type: 'section' },
-                    { key: 'confluence', label: 'Confluence MCP', type: 'section' },
-                    { key: 'onec', label: '1С MCP', type: 'section' },
-                    { key: 'file', label: 'Файловая система MCP', type: 'section' }
-                ]
+                'mcp_servers': [] // Будет заполнено динамически из API
             };
             
             const fields = sectionConfigs[section] || [];
