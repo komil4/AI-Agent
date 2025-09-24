@@ -119,6 +119,26 @@ class BaseFastMCPServer(ABC):
                 'error': str(e)
             }
     
+    def get_tools(self) -> List[Dict[str, Any]]:
+        """Возвращает список доступных инструментов сервера"""
+        try:
+            if not self.is_enabled():
+                logger.debug(f"🔧 Сервер {self.server_name} отключен, инструменты недоступны")
+                return []
+            
+            # Получаем инструменты через _get_tools (должен быть реализован в наследниках)
+            if hasattr(self, '_get_tools') and callable(self._get_tools):
+                tools = self._get_tools()
+                logger.debug(f"🔧 Получено {len(tools)} инструментов от {self.server_name}")
+                return tools
+            else:
+                logger.warning(f"⚠️ Сервер {self.server_name} не реализует метод _get_tools")
+                return []
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения инструментов от {self.server_name}: {e}")
+            return []
+    
     def get_admin_settings(self) -> Dict[str, Any]:
         """
         Возвращает настройки для админ-панели

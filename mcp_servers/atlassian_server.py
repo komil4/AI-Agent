@@ -819,6 +819,10 @@ class AtlassianFastMCPServer(BaseFastMCPServer):
                 'provider': 'atlassian',
                 'error': str(e)
             }
+    
+    def _get_tools(self) -> List[Dict[str, Any]]:
+        """Возвращает список инструментов Atlassian сервера"""
+        return self.tools
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ

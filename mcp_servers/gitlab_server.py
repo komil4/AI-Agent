@@ -847,6 +847,10 @@ class GitLabFastMCPServer(BaseFastMCPServer):
                 'provider': 'gitlab',
                 'error': str(e)
             }
+    
+    def _get_tools(self) -> List[Dict[str, Any]]:
+        """Возвращает список инструментов GitLab сервера"""
+        return self.tools
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ

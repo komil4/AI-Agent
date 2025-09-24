@@ -303,3 +303,7 @@ class FileMCPServer(BaseFastMCPServer):
                 'provider': 'file',
                 'error': str(e)
             }
+    
+    def _get_tools(self) -> List[Dict[str, Any]]:
+        """Возвращает список инструментов File сервера"""
+        return self.tools

@@ -625,6 +625,10 @@ class JiraFastMCPServer(BaseFastMCPServer):
                 'provider': 'jira',
                 'error': str(e)
             }
+    
+    def _get_tools(self) -> List[Dict[str, Any]]:
+        """Возвращает список инструментов Jira сервера"""
+        return self.tools
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
