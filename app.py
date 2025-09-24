@@ -64,11 +64,7 @@ admin_auth = AdminAuth()
 llm_client = LLMClient()
 code_analyzer = CodeAnalyzer()
 
-# Инициализация MCP серверов
-jira_server = JiraMCPServer()
-atlassian_server = AtlassianMCPServer()
-gitlab_server = GitLabMCPServer()
-onec_server = OneCMCPServer()
+# MCP серверы теперь инициализируются автоматически через server_discovery
 
 # Создание FastAPI приложения
 app = FastAPI(
@@ -650,11 +646,24 @@ async def analyze_code(analysis_request: CodeAnalysisRequest, request: Request):
 async def get_services_status():
     """Получает статус всех сервисов"""
     try:
+        # Получаем статус MCP серверов динамически
+        from mcp_servers import get_discovered_servers, create_server_instance
+        
+        mcp_services = {}
+        discovered_servers = get_discovered_servers()
+        
+        for server_name in discovered_servers.keys():
+            try:
+                server = create_server_instance(server_name)
+                if server:
+                    mcp_services[server_name] = {"status": "active" if server.test_connection() else "inactive"}
+                else:
+                    mcp_services[server_name] = {"status": "inactive"}
+            except Exception:
+                mcp_services[server_name] = {"status": "inactive"}
+        
         services = {
-            "jira": {"status": "active" if jira_server.is_connected() else "inactive"},
-            "atlassian": {"status": "active" if atlassian_server.is_connected() else "inactive"},
-            "gitlab": {"status": "active" if gitlab_server.is_connected() else "inactive"},
-            "onec": {"status": "active" if onec_server.is_connected() else "inactive"},
+            **mcp_services,
             "llm": {"status": "active" if llm_client.is_connected() else "inactive"},
             "database": {"status": "active"},
             "redis": {"status": "active" if session_manager.is_connected() else "inactive"}
@@ -738,11 +747,17 @@ def reinitialize_system():
         # Переинициализация MCP клиента
         mcp_client = MCPClient()
         
-        # Переинициализация серверов
-        jira_server.reconnect()
-        atlassian_server.reconnect()
-        gitlab_server.reconnect()
-        onec_server.reconnect()
+        # Переинициализация MCP серверов динамически
+        from mcp_servers import get_discovered_servers, create_server_instance
+        
+        discovered_servers = get_discovered_servers()
+        for server_name in discovered_servers.keys():
+            try:
+                server = create_server_instance(server_name)
+                if server:
+                    server.reconnect()
+            except Exception as e:
+                logger.warning(f"⚠️ Не удалось переподключить сервер {server_name}: {e}")
         
         # Переинициализация аутентификации
         ad_auth.reconnect()
