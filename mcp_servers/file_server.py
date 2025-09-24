@@ -20,6 +20,9 @@ class FileMCPServer(BaseFastMCPServer):
             { 'key': 'max_file_size', 'label': 'Максимальный размер файла (MB)', 'type': 'number', 'placeholder': '10' },
             { 'key': 'enabled', 'label': 'Включен', 'type': 'checkbox' }
         ]
+        
+        # Инициализация конфигурации
+        self._load_config()
         self.tools = [
             {
                 "name": "read_file",
@@ -203,3 +206,54 @@ class FileMCPServer(BaseFastMCPServer):
                 'provider': 'file',
                 'error': str(e)
             }
+    
+    def _get_description(self) -> str:
+        """Возвращает описание сервера"""
+        return self.description
+    
+    def _load_config(self):
+        """Загружает конфигурацию сервера"""
+        try:
+            config = self.config_manager.get_service_config(self.server_name)
+            self.base_path = config.get('base_path', '/tmp')
+            self.allowed_extensions = config.get('allowed_extensions', 'txt,md,py,js,html,css').split(',')
+            self.max_file_size = config.get('max_file_size', 10) * 1024 * 1024  # Конвертируем в байты
+        except Exception as e:
+            logger.error(f"❌ Ошибка загрузки конфигурации File сервера: {e}")
+            self.base_path = '/tmp'
+            self.allowed_extensions = ['txt', 'md', 'py', 'js', 'html', 'css']
+            self.max_file_size = 10 * 1024 * 1024
+    
+    def _connect(self):
+        """Подключается к файловой системе"""
+        try:
+            # Проверяем, что базовая директория существует
+            if not os.path.exists(self.base_path):
+                os.makedirs(self.base_path, exist_ok=True)
+                logger.info(f"✅ Создана базовая директория: {self.base_path}")
+            else:
+                logger.info(f"✅ Базовая директория доступна: {self.base_path}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка подключения к файловой системе: {e}")
+            raise
+    
+    def _test_connection(self) -> bool:
+        """Тестирует подключение к файловой системе"""
+        try:
+            # Проверяем доступность базовой директории
+            if not os.path.exists(self.base_path):
+                return False
+            
+            # Проверяем права на чтение и запись
+            test_file = os.path.join(self.base_path, '.test_write')
+            try:
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+                return True
+            except (OSError, IOError):
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка тестирования файловой системы: {e}")
+            return False

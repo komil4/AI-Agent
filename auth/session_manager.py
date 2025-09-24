@@ -64,6 +64,9 @@ class SessionManager:
     
     def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Получает данные сессии"""
+        logger.debug(f"🔍 Поиск сессии: {session_id}")
+        logger.debug(f"📊 Всего сессий в памяти: {len(self._sessions)}")
+        
         if self.redis_client:
             try:
                 session_data = self.redis_client.get(f"session:{session_id}")
@@ -76,13 +79,25 @@ class SessionManager:
                         self.session_expire_hours * 3600,
                         json.dumps(session_dict)
                     )
+                    logger.debug(f"✅ Сессия найдена в Redis: {session_id}")
                     return session_dict
+                logger.debug(f"❌ Сессия не найдена в Redis: {session_id}")
                 return None
             except Exception as e:
                 logger.warning(f"⚠️ Ошибка получения из Redis: {e}")
-                return self._sessions.get(session_id)
+                session_data = self._sessions.get(session_id)
+                if session_data:
+                    logger.debug(f"✅ Сессия найдена в памяти: {session_id}")
+                else:
+                    logger.debug(f"❌ Сессия не найдена в памяти: {session_id}")
+                return session_data
         else:
-            return self._sessions.get(session_id)
+            session_data = self._sessions.get(session_id)
+            if session_data:
+                logger.debug(f"✅ Сессия найдена в памяти: {session_id}")
+            else:
+                logger.debug(f"❌ Сессия не найдена в памяти: {session_id}")
+            return session_data
     
     def update_session(self, session_id: str, user_info: Dict[str, Any] = None, access_token: str = None):
         """Обновляет данные сессии"""

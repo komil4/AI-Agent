@@ -73,20 +73,58 @@ class ADAuthenticator:
             return None
         
         try:
-            # Подключение к LDAP серверу
+            server = self.ad_server
+            
+            # Пробуем разные методы аутентификации
+            
+            # 1. Простая аутентификация с sAMAccountName
             try:
-                conn = Connection(
-                    self.ad_server,
-                    user=f"{self.ad_domain}\\{username}",
-                    password=password,
-                    authentication=NTLM,
-                    auto_bind=True
-                )
-            except ValueError as e:
-                if "unsupported hash type" in str(e):
-                    logger.warning(f"⚠️ Неподдерживаемый тип хеша при LDAP аутентификации: {e}")
-                    return None
-                raise
+                user_dn = f"CN={username},{self.ad_base_dn}"
+                with Connection(server, user=user_dn, password=password) as conn:
+                    if conn.bind():
+                        user_info = self._get_user_info(conn, username)
+                        if user_info:
+                            return user_info
+            except Exception as e:
+                logger.warning(f"DN аутентификация не удалась: {e}")
+            
+            # 2. Аутентификация с UPN (User Principal Name)
+            try:
+                user_dn = f"{username}@{self.ad_domain}"
+                with Connection(server, user=user_dn, password=password) as conn:
+                    if conn.bind():
+                        user_info = self._get_user_info(conn, username)
+                        if user_info:
+                            return user_info
+            except Exception as e:
+                logger.warning(f"UPN аутентификация не удалась: {e}")
+            
+            # 3. Аутентификация с sAMAccountName
+            try:
+                user_dn = f"{self.ad_domain}\\{username}"
+                with Connection(server, user=user_dn, password=password) as conn:
+                    if conn.bind():
+                        user_info = self._get_user_info(conn, username)
+                        if user_info:
+                            return user_info
+            except Exception as e:
+                logger.warning(f"sAMAccountName аутентификация не удалась: {e}")
+            
+            # 4. Поиск пользователя и аутентификация по найденному DN
+            try:
+                user_dn = self._find_user_dn(server, username)
+                if user_dn:
+                    logger.info(f"Найден DN пользователя: {user_dn}")
+                    
+                    # Аутентифицируемся с найденным DN
+                    with Connection(server, user=user_dn, password=password) as auth_conn:
+                        if auth_conn.bind():
+                            user_info = self._get_user_info(auth_conn, username)
+                            if user_info:
+                                return user_info
+            except Exception as e:
+                logger.warning(f"Search DN аутентификация не удалась: {e}")
+            
             
             # Поиск пользователя в AD
             search_filter = f"(sAMAccountName={username})"
@@ -216,7 +254,7 @@ class ADAuthenticator:
 # ============================================================================
 # СЛУЖЕБНЫЕ ФУНКЦИИ
 # ============================================================================
-
+    
     def _load_config(self):
         """Загружает конфигурацию LDAP"""
         try:
@@ -242,6 +280,50 @@ class ADAuthenticator:
                 
         except Exception as e:
             logger.error(f"❌ Ошибка загрузки конфигурации LDAP: {e}")
+
+    def _get_user_info(self, conn: Connection, username: str) -> Optional[Dict[str, Any]]:
+        """
+        Получает информацию о пользователе из Active Directory
+        """
+        try:
+            # Поиск пользователя в AD
+            search_filter = f"(sAMAccountName={username})"
+            conn.search(
+                search_base=self.ad_base_dn,
+                search_filter=search_filter,
+                search_scope='SUBTREE',
+                attributes=['cn', 'mail', 'displayName', 'memberOf', 'sAMAccountName']
+            )
+
+            # Извлекаем группы
+            entry = conn.entries[0]
+            groups = []
+            if hasattr(entry, 'memberOf'):
+                for group_dn in entry.memberOf.values:
+                    # Извлекаем имя группы из DN
+                    group_name = group_dn.split(',')[0].replace('CN=', '')
+                    groups.append(group_name)
+                    
+            # Определяем права администратора
+            is_admin = any('admin' in group.lower() for group in groups)
+
+            if conn.entries:
+                entry = conn.entries[0]
+                user_info = {
+                    'username': str(entry.sAMAccountName),
+                    'display_name': str(entry.displayName) if entry.displayName else username,
+                    'email': str(entry.mail) if entry.mail else None,
+                    'groups': groups,
+                    'is_admin': is_admin
+                }
+                return user_info
+            else:
+                logger.warning(f"Пользователь {username} не найден в Active Directory")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Ошибка получения информации о пользователе: {e}")
+            return None
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ

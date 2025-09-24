@@ -60,9 +60,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         
         # Получаем session_id из cookies
         session_id = request.cookies.get('session_id')
+        logger.debug(f"🍪 Session ID из cookies: {session_id}")
+        logger.debug(f"📋 Все cookies: {request.cookies}")
         
         if not session_id:
-            logger.warning(f"Нет session_id для пути {request.url.path}")
+            logger.warning(f"❌ Нет session_id для пути {request.url.path}")
             # Если нет сессии, перенаправляем на страницу логина
             if request.url.path.startswith('/api/'):
                 raise HTTPException(

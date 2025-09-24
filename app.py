@@ -200,6 +200,9 @@ async def login(login_data: LoginRequest):
                 max_age=24*60*60
             )
             
+            logger.info(f"🍪 Cookie установлен: session_id={session_id}")
+            logger.info(f"📊 Сессия создана: {session_id}")
+            
             return json_response
         
         # Шаг 2: Если локальная аутентификация не удалась, проверяем LDAP (если включен)
@@ -270,6 +273,43 @@ async def login(login_data: LoginRequest):
         return LoginResponse(
             success=False,
             message=f"Ошибка аутентификации: {str(e)}"
+        )
+
+@app.get("/api/auth/me")
+async def get_current_user(request: Request):
+    """Получает информацию о текущем пользователе"""
+    try:
+        # Получаем session_id из cookies
+        session_id = request.cookies.get('session_id')
+        
+        if not session_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Требуется аутентификация"
+            )
+        
+        # Проверяем сессию
+        session_data = session_manager.get_session(session_id)
+        if not session_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Сессия истекла"
+            )
+        
+        # Возвращаем информацию о пользователе
+        user_info = session_data.get('user_info', {})
+        return {
+            "success": True,
+            "user_info": user_info
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения информации о пользователе: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка получения информации о пользователе: {str(e)}"
         )
 
 @app.post("/api/auth/logout")
@@ -662,9 +702,19 @@ async def get_services_status():
             except Exception:
                 mcp_services[server_name] = {"status": "inactive"}
         
+        # Проверяем статус LLM
+        llm_status = "active"
+        try:
+            if llm_client.provider:
+                llm_status = "active"
+            else:
+                llm_status = "inactive"
+        except Exception:
+            llm_status = "inactive"
+        
         services = {
             **mcp_services,
-            "llm": {"status": "active" if llm_client.is_connected() else "inactive"},
+            "llm": {"status": llm_status},
             "database": {"status": "active"},
             "redis": {"status": "active" if session_manager.is_connected() else "inactive"}
         }
