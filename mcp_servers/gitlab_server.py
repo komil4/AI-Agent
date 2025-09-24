@@ -812,6 +812,41 @@ class GitLabFastMCPServer(BaseFastMCPServer):
         except Exception as e:
             logger.error(f"❌ Ошибка получения файла: {e}")
             return format_tool_response(False, f"Ошибка получения файла: {str(e)}")
+    
+    def get_health_status(self) -> Dict[str, Any]:
+        """Возвращает статус здоровья GitLab сервера"""
+        try:
+            if not self.is_enabled():
+                return {
+                    'status': 'disabled',
+                    'provider': 'gitlab',
+                    'message': 'GitLab отключен в конфигурации'
+                }
+            
+            # Проверяем подключение к GitLab
+            if hasattr(self, 'gitlab') and self.gitlab:
+                # Пытаемся получить информацию о текущем пользователе
+                current_user = self.gitlab.user
+                return {
+                    'status': 'healthy',
+                    'provider': 'gitlab',
+                    'message': f'Подключение к GitLab успешно. Пользователь: {current_user.username}',
+                    'server_url': self.gitlab_url
+                }
+            else:
+                return {
+                    'status': 'unhealthy',
+                    'provider': 'gitlab',
+                    'message': 'GitLab клиент не инициализирован'
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка проверки здоровья GitLab: {e}")
+            return {
+                'status': 'unhealthy',
+                'provider': 'gitlab',
+                'error': str(e)
+            }
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ

@@ -207,13 +207,23 @@ class MCPClient:
     def _is_server_available(self, server_name: str, server: Any) -> bool:
         """Проверяет доступность сервера"""
         try:
-            # Проверяем, что сервер включен и имеет метод check_health
-            if hasattr(server, 'is_enabled') and hasattr(server, 'check_health'):
+            # Проверяем, что сервер включен
+            if hasattr(server, 'is_enabled') and callable(server.is_enabled):
                 if server.is_enabled():
-                    health = server.check_health()
-                    return health.get('status') == 'healthy'
+                    # Проверяем здоровье сервера через get_health_status
+                    if hasattr(server, 'get_health_status') and callable(server.get_health_status):
+                        health = server.get_health_status()
+                        return health.get('status') == 'healthy'
+                    # Или через test_connection если есть
+                    elif hasattr(server, 'test_connection') and callable(server.test_connection):
+                        return server.test_connection()
+                    # Если нет методов проверки, считаем доступным
+                    else:
+                        logger.warning(f"⚠️ Сервер {server_name} не имеет методов проверки здоровья")
+                        return True
             return False
-        except Exception:
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка проверки доступности сервера {server_name}: {e}")
             return False
     
     async def process_message_with_llm(self, message: str, user_context: dict = None) -> str:

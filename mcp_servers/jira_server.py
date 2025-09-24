@@ -590,6 +590,41 @@ class JiraFastMCPServer(BaseFastMCPServer):
         except Exception as e:
             logger.error(f"❌ Ошибка перехода задачи: {e}")
             return format_tool_response(False, f"Ошибка перехода задачи: {str(e)}")
+    
+    def get_health_status(self) -> Dict[str, Any]:
+        """Возвращает статус здоровья Jira сервера"""
+        try:
+            if not self.is_enabled():
+                return {
+                    'status': 'disabled',
+                    'provider': 'jira',
+                    'message': 'Jira отключен в конфигурации'
+                }
+            
+            # Проверяем подключение к Jira
+            if hasattr(self, 'jira') and self.jira:
+                # Пытаемся получить информацию о текущем пользователе
+                current_user = self.jira.current_user()
+                return {
+                    'status': 'healthy',
+                    'provider': 'jira',
+                    'message': f'Подключение к Jira успешно. Пользователь: {current_user}',
+                    'server_url': self.jira_url
+                }
+            else:
+                return {
+                    'status': 'unhealthy',
+                    'provider': 'jira',
+                    'message': 'Jira клиент не инициализирован'
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка проверки здоровья Jira: {e}")
+            return {
+                'status': 'unhealthy',
+                'provider': 'jira',
+                'error': str(e)
+            }
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ

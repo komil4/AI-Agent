@@ -257,3 +257,49 @@ class FileMCPServer(BaseFastMCPServer):
         except Exception as e:
             logger.error(f"❌ Ошибка тестирования файловой системы: {e}")
             return False
+    
+    def get_health_status(self) -> Dict[str, Any]:
+        """Возвращает статус здоровья File сервера"""
+        try:
+            if not self.is_enabled():
+                return {
+                    'status': 'disabled',
+                    'provider': 'file',
+                    'message': 'File сервер отключен в конфигурации'
+                }
+            
+            # Проверяем доступность файловой системы
+            if not os.path.exists(self.base_path):
+                return {
+                    'status': 'unhealthy',
+                    'provider': 'file',
+                    'message': f'Базовая директория не существует: {self.base_path}'
+                }
+            
+            # Проверяем права на чтение и запись
+            test_file = os.path.join(self.base_path, '.test_write')
+            try:
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+                
+                return {
+                    'status': 'healthy',
+                    'provider': 'file',
+                    'message': f'Файловая система доступна. Базовая директория: {self.base_path}',
+                    'base_path': self.base_path
+                }
+            except (OSError, IOError) as e:
+                return {
+                    'status': 'unhealthy',
+                    'provider': 'file',
+                    'message': f'Нет прав доступа к файловой системе: {str(e)}'
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка проверки здоровья File сервера: {e}")
+            return {
+                'status': 'unhealthy',
+                'provider': 'file',
+                'error': str(e)
+            }

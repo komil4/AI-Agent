@@ -784,6 +784,41 @@ class AtlassianFastMCPServer(BaseFastMCPServer):
         except Exception as e:
             logger.error(f"❌ Ошибка удаления страницы: {e}")
             return format_tool_response(False, f"Ошибка удаления страницы: {str(e)}")
+    
+    def get_health_status(self) -> Dict[str, Any]:
+        """Возвращает статус здоровья Atlassian сервера"""
+        try:
+            if not self.is_enabled():
+                return {
+                    'status': 'disabled',
+                    'provider': 'atlassian',
+                    'message': 'Atlassian отключен в конфигурации'
+                }
+            
+            # Проверяем подключение к Confluence
+            if hasattr(self, 'confluence') and self.confluence:
+                # Пытаемся получить информацию о текущем пользователе
+                current_user = self.confluence.get_current_user()
+                return {
+                    'status': 'healthy',
+                    'provider': 'atlassian',
+                    'message': f'Подключение к Confluence успешно. Пользователь: {current_user.get("displayName", "Unknown")}',
+                    'server_url': self.confluence_url
+                }
+            else:
+                return {
+                    'status': 'unhealthy',
+                    'provider': 'atlassian',
+                    'message': 'Confluence клиент не инициализирован'
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка проверки здоровья Atlassian: {e}")
+            return {
+                'status': 'unhealthy',
+                'provider': 'atlassian',
+                'error': str(e)
+            }
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ

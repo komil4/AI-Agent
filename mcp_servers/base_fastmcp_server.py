@@ -85,6 +85,40 @@ class BaseFastMCPServer(ABC):
             "connected": self.test_connection()
         }
     
+    def get_health_status(self) -> Dict[str, Any]:
+        """Возвращает статус здоровья сервера"""
+        try:
+            is_enabled = self.is_enabled()
+            is_connected = self.test_connection()
+            
+            if not is_enabled:
+                return {
+                    'status': 'disabled',
+                    'provider': self.server_name,
+                    'message': 'Сервер отключен в конфигурации'
+                }
+            
+            if is_connected:
+                return {
+                    'status': 'healthy',
+                    'provider': self.server_name,
+                    'message': 'Сервер работает нормально'
+                }
+            else:
+                return {
+                    'status': 'unhealthy',
+                    'provider': self.server_name,
+                    'message': 'Не удается подключиться к серверу'
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения статуса здоровья {self.server_name}: {e}")
+            return {
+                'status': 'unhealthy',
+                'provider': self.server_name,
+                'error': str(e)
+            }
+    
     def get_admin_settings(self) -> Dict[str, Any]:
         """
         Возвращает настройки для админ-панели

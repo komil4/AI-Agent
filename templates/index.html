@@ -289,6 +289,14 @@
                         <span class="status-indicator" id="file-status"></span>
                         <small>Файлы MCP</small>
                     </div>
+                    <div class="mb-2" data-service="database">
+                        <span class="status-indicator" id="database-status"></span>
+                        <small>База данных</small>
+                    </div>
+                    <div class="mb-2" data-service="redis">
+                        <span class="status-indicator" id="redis-status"></span>
+                        <small>Redis</small>
+                    </div>
                 </div>
                 
                 <hr>
@@ -544,36 +552,62 @@
             fetch('/api/services/status')
                 .then(response => response.json())
                 .then(data => {
-                    // Обновляем статусы
-                    updateServiceStatus('llm-status', data.llm.status);
-                    updateServiceStatus('jira-status', data.jira.status);
-                    updateServiceStatus('atlassian-status', data.atlassian.status);
-                    updateServiceStatus('gitlab-status', data.gitlab.status);
-                    updateServiceStatus('onec-status', data.onec.status);
+                    console.log('Статус сервисов:', data);
                     
-                    // Скрываем/показываем сервисы в зависимости от их статуса
-                    updateServiceVisibility('llm', data.llm.enabled);
-                    updateServiceVisibility('jira', data.jira.enabled);
-                    updateServiceVisibility('atlassian', data.atlassian.enabled);
-                    updateServiceVisibility('gitlab', data.gitlab.enabled);
-                    updateServiceVisibility('onec', data.onec.enabled);
+                    // Обновляем статусы для известных сервисов
+                    if (data.services) {
+                        // LLM статус
+                        if (data.services.llm) {
+                            updateServiceStatus('llm-status', data.services.llm.status);
+                        }
+                        
+                        // MCP серверы (динамически)
+                        const mcpServers = ['jira', 'atlassian', 'gitlab', 'onec', 'file', 'ldap'];
+                        mcpServers.forEach(serverName => {
+                            if (data.services[serverName]) {
+                                updateServiceStatus(`${serverName}-status`, data.services[serverName].status);
+                            }
+                        });
+                        
+                        // Другие сервисы
+                        if (data.services.database) {
+                            updateServiceStatus('database-status', data.services.database.status);
+                        }
+                        if (data.services.redis) {
+                            updateServiceStatus('redis-status', data.services.redis.status);
+                        }
+                    }
                 })
                 .catch(error => {
                     console.error('Ошибка проверки статуса:', error);
+                    // Показываем общую ошибку для всех сервисов
+                    const serviceElements = document.querySelectorAll('[id$="-status"]');
+                    serviceElements.forEach(element => {
+                        element.innerHTML = '<i class="fas fa-exclamation-triangle text-warning"></i> Ошибка';
+                    });
                 });
         }
 
         function updateServiceStatus(elementId, status) {
             const element = document.getElementById(elementId);
+            if (!element) {
+                console.warn(`Элемент с ID ${elementId} не найден`);
+                return;
+            }
+            
             element.className = 'status-indicator';
             
-            if (status === 'connected' || status === 'healthy') {
-                element.classList.add('status-connected');
-            } else if (status === 'error' || status === 'unhealthy') {
+            if (status === 'active' || status === 'connected' || status === 'healthy') {
+                element.innerHTML = '<i class="fas fa-check-circle text-success"></i> Активен';
+                element.classList.add('status-success');
+            } else if (status === 'inactive' || status === 'error' || status === 'unhealthy') {
+                element.innerHTML = '<i class="fas fa-times-circle text-danger"></i> Неактивен';
                 element.classList.add('status-error');
             } else if (status === 'disabled') {
+                element.innerHTML = '<i class="fas fa-ban text-warning"></i> Отключен';
                 element.classList.add('status-warning');
             } else {
+                element.innerHTML = '<i class="fas fa-question-circle text-warning"></i> Неизвестно';
                 element.classList.add('status-warning');
             }
         }

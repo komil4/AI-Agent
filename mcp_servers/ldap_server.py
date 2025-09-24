@@ -878,6 +878,53 @@ class LDAPFastMCPServer(BaseFastMCPServer):
         except Exception as e:
             logger.error(f"❌ Ошибка получения информации о LDAP: {e}")
             return format_tool_response(False, f"Ошибка получения информации о LDAP: {str(e)}")
+    
+    def get_health_status(self) -> Dict[str, Any]:
+        """Возвращает статус здоровья LDAP сервера"""
+        try:
+            if not self.is_enabled():
+                return {
+                    'status': 'disabled',
+                    'provider': 'ldap',
+                    'message': 'LDAP отключен в конфигурации'
+                }
+            
+            # Проверяем подключение к LDAP
+            if hasattr(self, 'server') and self.server:
+                # Пытаемся подключиться к LDAP серверу
+                from ldap3 import Connection, Server
+                
+                server = Server(self.server)
+                conn = Connection(server, auto_bind=True)
+                
+                if conn.bind():
+                    conn.unbind()
+                    return {
+                        'status': 'healthy',
+                        'provider': 'ldap',
+                        'message': f'Подключение к LDAP успешно. Сервер: {self.server}',
+                        'server_url': self.server
+                    }
+                else:
+                    return {
+                        'status': 'unhealthy',
+                        'provider': 'ldap',
+                        'message': 'Не удается подключиться к LDAP серверу'
+                    }
+            else:
+                return {
+                    'status': 'unhealthy',
+                    'provider': 'ldap',
+                    'message': 'LDAP сервер не настроен'
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка проверки здоровья LDAP: {e}")
+            return {
+                'status': 'unhealthy',
+                'provider': 'ldap',
+                'error': str(e)
+            }
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ

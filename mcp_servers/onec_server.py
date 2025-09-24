@@ -828,6 +828,53 @@ class OneCFastMCPServer(BaseFastMCPServer):
         except Exception as e:
             logger.error(f"❌ Ошибка поиска задач: {e}")
             return format_tool_response(False, f"Ошибка поиска задач: {str(e)}")
+    
+    def get_health_status(self) -> Dict[str, Any]:
+        """Возвращает статус здоровья 1C сервера"""
+        try:
+            if not self.is_enabled():
+                return {
+                    'status': 'disabled',
+                    'provider': 'onec',
+                    'message': '1C отключен в конфигурации'
+                }
+            
+            # Проверяем подключение к 1C
+            if hasattr(self, 'auth') and self.auth:
+                # Пытаемся выполнить простой запрос для проверки подключения
+                response = requests.get(
+                    f"{self.base_url}/api/v1/tasks",
+                    headers=self.auth,
+                    timeout=5
+                )
+                
+                if response.status_code == 200:
+                    return {
+                        'status': 'healthy',
+                        'provider': 'onec',
+                        'message': f'Подключение к 1C успешно. Сервер: {self.base_url}',
+                        'server_url': self.base_url
+                    }
+                else:
+                    return {
+                        'status': 'unhealthy',
+                        'provider': 'onec',
+                        'message': f'1C сервер недоступен. Статус: {response.status_code}'
+                    }
+            else:
+                return {
+                    'status': 'unhealthy',
+                    'provider': 'onec',
+                    'message': '1C клиент не инициализирован'
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка проверки здоровья 1C: {e}")
+            return {
+                'status': 'unhealthy',
+                'provider': 'onec',
+                'error': str(e)
+            }
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
