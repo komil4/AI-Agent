@@ -413,11 +413,14 @@
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 0.85rem;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
             font-weight: 500;
             transition: all 0.3s ease;
+            white-space: nowrap;
+            min-width: 80px;
+            justify-content: center;
         }
         
         .status-indicator.status-success {
@@ -449,6 +452,17 @@
             border: 1px solid var(--border-color);
             border-radius: 6px;
             transition: all 0.3s ease;
+            min-height: 48px;
+        }
+        
+        .service-item .service-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .service-item .status-indicator {
+            flex-shrink: 0;
+            margin-left: 12px;
         }
         
         .service-item:hover {
@@ -670,7 +684,7 @@
                 <h6><i class="fas fa-server"></i> Статус сервисов</h6>
                 <div id="services-status">
                     <div class="service-item" data-service="llm">
-                        <div>
+                        <div class="service-info">
                             <div class="service-name">LLM Сервер</div>
                             <div class="service-description">AI модели и обработка</div>
                         </div>
@@ -679,7 +693,7 @@
                         </span>
                     </div>
                     <div class="service-item" data-service="jira">
-                        <div>
+                        <div class="service-info">
                             <div class="service-name">Jira</div>
                             <div class="service-description">Управление задачами</div>
                         </div>
@@ -688,7 +702,7 @@
                         </span>
                     </div>
                     <div class="service-item" data-service="atlassian">
-                        <div>
+                        <div class="service-info">
                             <div class="service-name">Confluence</div>
                             <div class="service-description">Документация</div>
                         </div>
@@ -697,7 +711,7 @@
                         </span>
                     </div>
                     <div class="service-item" data-service="gitlab">
-                        <div>
+                        <div class="service-info">
                             <div class="service-name">GitLab</div>
                             <div class="service-description">Репозитории</div>
                         </div>
@@ -706,7 +720,7 @@
                         </span>
                     </div>
                     <div class="service-item" data-service="onec">
-                        <div>
+                        <div class="service-info">
                             <div class="service-name">1С</div>
                             <div class="service-description">Задачи и данные</div>
                         </div>
@@ -715,7 +729,7 @@
                         </span>
                     </div>
                     <div class="service-item" data-service="file">
-                        <div>
+                        <div class="service-info">
                             <div class="service-name">Файловая система</div>
                             <div class="service-description">Операции с файлами</div>
                         </div>
@@ -724,7 +738,7 @@
                         </span>
                     </div>
                     <div class="service-item" data-service="ldap">
-                        <div>
+                        <div class="service-info">
                             <div class="service-name">LDAP/AD</div>
                             <div class="service-description">Пользователи и группы</div>
                         </div>
@@ -733,7 +747,7 @@
                         </span>
                     </div>
                     <div class="service-item" data-service="database">
-                        <div>
+                        <div class="service-info">
                             <div class="service-name">База данных</div>
                             <div class="service-description">PostgreSQL</div>
                         </div>
@@ -742,7 +756,7 @@
                         </span>
                     </div>
                     <div class="service-item" data-service="redis">
-                        <div>
+                        <div class="service-info">
                             <div class="service-name">Redis кэш</div>
                             <div class="service-description">Сессии и кэш</div>
                         </div>

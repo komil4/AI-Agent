@@ -175,6 +175,7 @@ async def login(login_data: LoginRequest):
             
             # Подготавливаем данные пользователя для сессии
             user_info = {
+                "id": db_user.id,
                 "username": db_user.username,
                 "display_name": db_user.display_name or db_user.username,
                 "email": db_user.email or "",
@@ -246,9 +247,20 @@ async def login(login_data: LoginRequest):
         db_user = chat_service.get_or_create_user(ldap_user_info['username'], ldap_user_info)
         logger.info(f"✅ LDAP пользователь создан/обновлен в БД: {db_user.id}")
         
+        # Подготавливаем данные пользователя для сессии с ID из БД
+        user_info = {
+            "id": db_user.id,
+            "username": db_user.username,
+            "display_name": db_user.display_name or db_user.username,
+            "email": db_user.email or "",
+            "groups": db_user.groups or [],
+            "is_admin": db_user.is_admin,
+            "is_ldap_user": True
+        }
+        
         # Создаем JWT токен и сессию
-        access_token = ad_auth.create_access_token(ldap_user_info)
-        session_id = session_manager.create_session(ldap_user_info, access_token)
+        access_token = ad_auth.create_access_token(user_info)
+        session_id = session_manager.create_session(user_info, access_token)
         
         # Создаем ответ
         response = LoginResponse(
@@ -535,7 +547,10 @@ async def get_user_context(request: Request):
         user_info = session_data.get('user_info', {})
         user_id = user_info.get('id')
         
+        logger.info(f"🔍 Отладка контекста пользователя: user_info={user_info}, user_id={user_id}")
+        
         if not user_id:
+            logger.error(f"❌ ID пользователя не найден в сессии: {user_info}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="ID пользователя не найден в сессии"
@@ -1131,6 +1146,31 @@ async def process_command(message: str, user_context: dict = None) -> str:
 # ============================================================================
 # API ENDPOINTS ДЛЯ УПРАВЛЕНИЯ СЕССИЯМИ ЧАТА
 # ============================================================================
+
+async def get_current_user_info(request: Request) -> dict:
+    """Получает информацию о текущем пользователе из сессии"""
+    session_id = request.cookies.get('session_id')
+    if not session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Сессия не найдена"
+        )
+    
+    session_data = session_manager.get_session(session_id)
+    if not session_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Сессия истекла"
+        )
+    
+    user_info = session_data.get('user_info')
+    if not user_info:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Информация о пользователе не найдена"
+        )
+    
+    return user_info
 
 @app.get("/api/chat/sessions")
 async def get_chat_sessions(request: Request):
