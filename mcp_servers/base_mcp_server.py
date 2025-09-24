@@ -290,12 +290,31 @@ def create_tool_schema(name: str, description: str, parameters: Dict[str, Any]) 
         }
     }
 
-def validate_tool_parameters(parameters: Dict[str, Any], required: List[str]) -> bool:
+def validate_tool_parameters(tool_name: str, arguments: Dict[str, Any], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Валидирует параметры инструмента"""
-    for param in required:
-        if param not in parameters:
-            return False
-    return True
+    try:
+        # Находим схему инструмента
+        tool_schema = None
+        for tool in tools:
+            if tool.get('name') == tool_name:
+                tool_schema = tool.get('inputSchema', {})
+                break
+        
+        if not tool_schema:
+            return {'valid': False, 'error': f'Схема инструмента {tool_name} не найдена'}
+        
+        # Получаем обязательные параметры
+        required_params = tool_schema.get('properties', {}).get('required', [])
+        
+        # Проверяем обязательные параметры
+        for param in required_params:
+            if param not in arguments:
+                return {'valid': False, 'error': f'Отсутствует обязательный параметр: {param}'}
+        
+        return {'valid': True, 'error': None}
+        
+    except Exception as e:
+        return {'valid': False, 'error': f'Ошибка валидации: {str(e)}'}
 
 def format_tool_response(success: bool, message: str, data: Any = None) -> Dict[str, Any]:
     """Форматирует ответ инструмента"""

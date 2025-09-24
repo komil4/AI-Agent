@@ -8,14 +8,21 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         :root {
-            --primary-dark: #122c34;
-            --primary-medium: #0b4f6c;
-            --primary-light: #2978a0;
-            --accent-color: #2978a0;
-            --text-light: #ffffff;
-            --text-dark: #122c34;
-            --bg-light: #f8f9fa;
-            --border-color: #dee2e6;
+            --primary-dark: #1a1612;
+            --primary-medium: #2d241f;
+            --primary-light: #3d332c;
+            --accent-color: #d4a574;
+            --text-light: #f5f1eb;
+            --text-dark: #a0958a;
+            --text-primary: #f5f1eb;
+            --bg-light: #1a1612;
+            --bg-medium: #2d241f;
+            --bg-card: #3d332c;
+            --border-color: #4a4038;
+            --success-color: #8fbc8f;
+            --warning-color: #daa520;
+            --danger-color: #cd853f;
+            --info-color: #d4a574;
         }
         
         body {
@@ -27,11 +34,12 @@
         }
         
         .login-container {
-            background: rgba(255, 255, 255, 0.95);
+            background: var(--bg-card);
             border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
             overflow: hidden;
             backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
         }
         
         .login-header {
@@ -50,11 +58,19 @@
             border: 2px solid var(--border-color);
             padding: 15px 18px;
             transition: all 0.3s ease;
+            background: var(--bg-medium);
+            color: var(--text-primary);
         }
         
         .form-control:focus {
-            border-color: var(--primary-light);
-            box-shadow: 0 0 0 0.2rem rgba(41, 120, 160, 0.25);
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 0.2rem rgba(212, 165, 116, 0.25);
+            background: var(--bg-medium);
+            color: var(--text-primary);
+        }
+        
+        .form-control::placeholder {
+            color: var(--text-dark);
         }
         
         .btn-login {

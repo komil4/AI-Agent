@@ -8,21 +8,21 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         :root {
-            --primary-dark: #0d1117;
-            --primary-medium: #161b22;
-            --primary-light: #21262d;
-            --accent-color: #58a6ff;
-            --text-light: #f0f6fc;
-            --text-dark: #8b949e;
-            --text-primary: #f0f6fc;
-            --bg-light: #0d1117;
-            --bg-medium: #161b22;
-            --bg-card: #21262d;
-            --border-color: #30363d;
-            --success-color: #3fb950;
-            --warning-color: #d29922;
-            --danger-color: #f85149;
-            --info-color: #58a6ff;
+            --primary-dark: #1a1612;
+            --primary-medium: #2d241f;
+            --primary-light: #3d332c;
+            --accent-color: #d4a574;
+            --text-light: #f5f1eb;
+            --text-dark: #a0958a;
+            --text-primary: #f5f1eb;
+            --bg-light: #1a1612;
+            --bg-medium: #2d241f;
+            --bg-card: #3d332c;
+            --border-color: #4a4038;
+            --success-color: #8fbc8f;
+            --warning-color: #daa520;
+            --danger-color: #cd853f;
+            --info-color: #d4a574;
         }
         
         body {
@@ -54,7 +54,8 @@
         }
         
         .chat-container {
-            height: 70vh;
+            height: calc(100vh - 200px);
+            min-height: 500px;
             overflow-y: auto;
             border: 2px solid var(--border-color);
             border-radius: 15px;
@@ -257,6 +258,289 @@
             filter: invert(1);
         }
         
+        /* Стили для боковой панели */
+        .col-md-3 {
+            background: var(--bg-medium) !important;
+            border-right: 1px solid var(--border-color);
+        }
+        
+        .bg-light {
+            background: var(--bg-medium) !important;
+        }
+        
+        .text-muted {
+            color: var(--text-dark) !important;
+        }
+        
+        /* Стили для кнопок */
+        .btn-outline-info {
+            color: var(--accent-color);
+            border-color: var(--accent-color);
+            background: transparent;
+        }
+        
+        .btn-outline-info:hover {
+            background: var(--accent-color);
+            color: var(--text-light);
+            border-color: var(--accent-color);
+        }
+        
+        .btn-outline-warning {
+            color: var(--warning-color);
+            border-color: var(--warning-color);
+            background: transparent;
+        }
+        
+        .btn-outline-warning:hover {
+            background: var(--warning-color);
+            color: var(--text-light);
+            border-color: var(--warning-color);
+        }
+        
+        .btn-outline-success {
+            color: var(--success-color);
+            border-color: var(--success-color);
+            background: transparent;
+        }
+        
+        .btn-outline-success:hover {
+            background: var(--success-color);
+            color: var(--text-light);
+            border-color: var(--success-color);
+        }
+        
+        .btn-outline-danger {
+            color: var(--danger-color);
+            border-color: var(--danger-color);
+            background: transparent;
+        }
+        
+        .btn-outline-danger:hover {
+            background: var(--danger-color);
+            color: var(--text-light);
+            border-color: var(--danger-color);
+        }
+        
+        .btn-outline-primary {
+            color: var(--accent-color);
+            border-color: var(--accent-color);
+            background: transparent;
+        }
+        
+        .btn-outline-primary:hover {
+            background: var(--accent-color);
+            color: var(--text-light);
+            border-color: var(--accent-color);
+        }
+        
+        /* Стили для бейджей */
+        .badge {
+            background: var(--bg-card) !important;
+            color: var(--text-primary) !important;
+            border: 1px solid var(--border-color);
+        }
+        
+        .badge:hover {
+            background: var(--accent-color) !important;
+            color: var(--text-light) !important;
+            border-color: var(--accent-color);
+        }
+        
+        .badge.bg-light {
+            background: var(--bg-card) !important;
+            color: var(--text-primary) !important;
+            border: 1px solid var(--border-color);
+        }
+        
+        .badge.bg-light:hover {
+            background: var(--accent-color) !important;
+            color: var(--text-light) !important;
+            border-color: var(--accent-color);
+        }
+        
+        /* Стили для заголовков */
+        h4, h5, h6 {
+            color: var(--text-primary) !important;
+        }
+        
+        /* Стили для списка сессий */
+        .chat-session-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            margin-bottom: 4px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .chat-session-item:hover {
+            background: var(--bg-medium);
+            border-color: var(--accent-color);
+        }
+        
+        .chat-session-item.active {
+            background: var(--accent-color);
+            color: var(--text-light);
+            border-color: var(--accent-color);
+        }
+        
+        /* Стили для статусов сервисов */
+        .service-status {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            margin-bottom: 4px;
+            border-radius: 6px;
+        }
+        
+        .service-status.active {
+            border-left: 4px solid var(--success-color);
+        }
+        
+        .service-status.inactive {
+            border-left: 4px solid var(--warning-color);
+        }
+        
+        .service-status.error {
+            border-left: 4px solid var(--danger-color);
+        }
+        
+        /* Стили для индикаторов статуса сервисов */
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .status-indicator.status-success {
+            background: rgba(63, 185, 80, 0.1);
+            color: var(--success-color);
+            border: 1px solid rgba(63, 185, 80, 0.3);
+        }
+        
+        .status-indicator.status-error {
+            background: rgba(248, 81, 73, 0.1);
+            color: var(--danger-color);
+            border: 1px solid rgba(248, 81, 73, 0.3);
+        }
+        
+        .status-indicator.status-warning {
+            background: rgba(210, 153, 34, 0.1);
+            color: var(--warning-color);
+            border: 1px solid rgba(210, 153, 34, 0.3);
+        }
+        
+        /* Стили для контейнеров сервисов */
+        .service-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            margin-bottom: 6px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        
+        .service-item:hover {
+            background: var(--bg-medium);
+            border-color: var(--accent-color);
+        }
+        
+        .service-item .service-name {
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        
+        .service-item .service-description {
+            color: var(--text-dark);
+            font-size: 0.8rem;
+            margin-top: 2px;
+        }
+        
+        /* Дополнительные стили для улучшения внешнего вида */
+        .container-fluid {
+            background: var(--bg-light);
+        }
+        
+        .row {
+            margin: 0;
+        }
+        
+        /* Стили для разделителей */
+        hr {
+            border-color: var(--border-color);
+        }
+        
+        /* Стили для иконок */
+        .fas, .fa {
+            color: var(--text-primary);
+        }
+        
+        /* Стили для текста */
+        small {
+            color: var(--text-dark) !important;
+        }
+        
+        /* Стили для кнопок в сетке */
+        .d-grid .btn {
+            margin-bottom: 8px;
+        }
+        
+        /* Стили для флекс-контейнеров */
+        .d-flex {
+            gap: 4px;
+        }
+        
+        /* Стили для отступов */
+        .mb-3 {
+            margin-bottom: 1rem !important;
+        }
+        
+        .mt-2 {
+            margin-top: 0.5rem !important;
+        }
+        
+        .p-3 {
+            padding: 1rem !important;
+        }
+        
+        /* Стили для скроллбара */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--bg-medium);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--accent-color);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-dark);
+        }
+        
+        /* Стили для контейнера популярных команд */
+        .prompt-suggestions {
+            max-height: 300px;
+            overflow-y: auto;
+            padding-right: 8px;
+        }
+        
         /* Стили для ссылок в сообщениях чата */
         .message a {
             color: var(--accent-color) !important;
@@ -344,7 +628,7 @@
         <div class="container-fluid">
             <div class="row">
             <!-- Sidebar -->
-            <div class="col-md-3 bg-light p-3">
+            <div class="col-md-3 p-3">
                 <h4><i class="fas fa-robot"></i> AI Ассистент</h4>
                 <div class="mb-3">
                     <a href="/docs" target="_blank" class="btn btn-outline-info btn-sm">
@@ -385,37 +669,86 @@
                 <!-- Статус сервисов -->
                 <h6><i class="fas fa-server"></i> Статус сервисов</h6>
                 <div id="services-status">
-                    <div class="mb-2" data-service="llm">
-                        <span class="status-indicator" id="llm-status"></span>
-                        <small>LLM Сервер</small>
+                    <div class="service-item" data-service="llm">
+                        <div>
+                            <div class="service-name">LLM Сервер</div>
+                            <div class="service-description">AI модели и обработка</div>
+                        </div>
+                        <span class="status-indicator" id="llm-status">
+                            <i class="fas fa-spinner fa-spin"></i> Проверка...
+                        </span>
                     </div>
-                    <div class="mb-2" data-service="jira">
-                        <span class="status-indicator" id="jira-status"></span>
-                        <small>Jira - Управление задачами</small>
+                    <div class="service-item" data-service="jira">
+                        <div>
+                            <div class="service-name">Jira</div>
+                            <div class="service-description">Управление задачами</div>
+                        </div>
+                        <span class="status-indicator" id="jira-status">
+                            <i class="fas fa-spinner fa-spin"></i> Проверка...
+                        </span>
                     </div>
-                    <div class="mb-2" data-service="atlassian">
-                        <span class="status-indicator" id="atlassian-status"></span>
-                        <small>Confluence - Документация</small>
+                    <div class="service-item" data-service="atlassian">
+                        <div>
+                            <div class="service-name">Confluence</div>
+                            <div class="service-description">Документация</div>
+                        </div>
+                        <span class="status-indicator" id="atlassian-status">
+                            <i class="fas fa-spinner fa-spin"></i> Проверка...
+                        </span>
                     </div>
-                    <div class="mb-2" data-service="gitlab">
-                        <span class="status-indicator" id="gitlab-status"></span>
-                        <small>GitLab - Репозитории</small>
+                    <div class="service-item" data-service="gitlab">
+                        <div>
+                            <div class="service-name">GitLab</div>
+                            <div class="service-description">Репозитории</div>
+                        </div>
+                        <span class="status-indicator" id="gitlab-status">
+                            <i class="fas fa-spinner fa-spin"></i> Проверка...
+                        </span>
                     </div>
-                    <div class="mb-2" data-service="onec">
-                        <span class="status-indicator" id="onec-status"></span>
-                        <small>1С - Задачи и данные</small>
+                    <div class="service-item" data-service="onec">
+                        <div>
+                            <div class="service-name">1С</div>
+                            <div class="service-description">Задачи и данные</div>
+                        </div>
+                        <span class="status-indicator" id="onec-status">
+                            <i class="fas fa-spinner fa-spin"></i> Проверка...
+                        </span>
                     </div>
-                    <div class="mb-2" data-service="file">
-                        <span class="status-indicator" id="file-status"></span>
-                        <small>Файловая система</small>
+                    <div class="service-item" data-service="file">
+                        <div>
+                            <div class="service-name">Файловая система</div>
+                            <div class="service-description">Операции с файлами</div>
+                        </div>
+                        <span class="status-indicator" id="file-status">
+                            <i class="fas fa-spinner fa-spin"></i> Проверка...
+                        </span>
                     </div>
-                    <div class="mb-2" data-service="database">
-                        <span class="status-indicator" id="database-status"></span>
-                        <small>База данных</small>
+                    <div class="service-item" data-service="ldap">
+                        <div>
+                            <div class="service-name">LDAP/AD</div>
+                            <div class="service-description">Пользователи и группы</div>
+                        </div>
+                        <span class="status-indicator" id="ldap-status">
+                            <i class="fas fa-spinner fa-spin"></i> Проверка...
+                        </span>
                     </div>
-                    <div class="mb-2" data-service="redis">
-                        <span class="status-indicator" id="redis-status"></span>
-                        <small>Redis</small>
+                    <div class="service-item" data-service="database">
+                        <div>
+                            <div class="service-name">База данных</div>
+                            <div class="service-description">PostgreSQL</div>
+                        </div>
+                        <span class="status-indicator" id="database-status">
+                            <i class="fas fa-spinner fa-spin"></i> Проверка...
+                        </span>
+                    </div>
+                    <div class="service-item" data-service="redis">
+                        <div>
+                            <div class="service-name">Redis кэш</div>
+                            <div class="service-description">Сессии и кэш</div>
+                        </div>
+                        <span class="status-indicator" id="redis-status">
+                            <i class="fas fa-spinner fa-spin"></i> Проверка...
+                        </span>
                     </div>
                 </div>
                 
@@ -427,19 +760,19 @@
                     <div class="prompt-category mb-3" data-service="jira">
                         <small class="text-muted fw-bold">🔧 Jira</small>
                         <div class="d-flex flex-wrap gap-1 mt-1">
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('найди задачи по авторизации')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('найди задачи по авторизации')">
                                 найти задачи
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('проанализируй код под задачу №PROJ-123')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('проанализируй код под задачу №PROJ-123')">
                                 анализ кода
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('измени статус задачи TEST-123')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('измени статус задачи TEST-123')">
                                 изменить статус
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('покажи задачи в работе')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('покажи задачи в работе')">
                                 задачи в работе
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('создай задачу с описанием исправить баг')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('создай задачу с описанием исправить баг')">
                                 создать баг
                             </span>
                         </div>
@@ -448,19 +781,19 @@
                     <div class="prompt-category mb-3" data-service="atlassian">
                         <small class="text-muted fw-bold">📄 Confluence</small>
                         <div class="d-flex flex-wrap gap-1 mt-1">
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('найди страницы по API')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('найди страницы по API')">
                                 найти страницы
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('покажи все страницы')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('покажи все страницы')">
                                 все страницы
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('обнови страницу с ID 123456')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('обнови страницу с ID 123456')">
                                 обновить страницу
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('создай страницу с заголовком документация')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('создай страницу с заголовком документация')">
                                 создать документацию
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('найди страницы по тестированию')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('найди страницы по тестированию')">
                                 найти по тестированию
                             </span>
                         </div>
@@ -469,19 +802,19 @@
                     <div class="prompt-category mb-3" data-service="gitlab">
                         <small class="text-muted fw-bold">🐙 GitLab</small>
                         <div class="d-flex flex-wrap gap-1 mt-1">
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('найди проекты по ключевому слову')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('найди проекты по ключевому слову')">
                                 найти проекты
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('покажи коммиты проекта my-project')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('покажи коммиты проекта my-project')">
                                 коммиты проекта
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('покажи ветки проекта my-project')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('покажи ветки проекта my-project')">
                                 ветки проекта
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('создай проект с названием новый-проект')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('создай проект с названием новый-проект')">
                                 создать проект
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('создай merge request')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('создай merge request')">
                                 создать MR
                             </span>
                         </div>
@@ -490,13 +823,13 @@
                     <div class="prompt-category mb-3" data-service="onec">
                         <small class="text-muted fw-bold">📊 1С</small>
                         <div class="d-flex flex-wrap gap-1 mt-1">
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('покажи задачи пользователя admin')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('покажи задачи пользователя admin')">
                                 задачи пользователя
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('покажи информацию по задаче 123')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('покажи информацию по задаче 123')">
                                 информация по задаче
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('найди задачи в 1с')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('найди задачи в 1с')">
                                 поиск задач
                             </span>
                         </div>
@@ -505,13 +838,13 @@
                     <div class="prompt-category mb-3" data-service="file">
                         <small class="text-muted fw-bold">📁 Файлы</small>
                         <div class="d-flex flex-wrap gap-1 mt-1">
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('покажи файлы в директории /tmp')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('покажи файлы в директории /tmp')">
                                 список файлов
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('прочитай файл /tmp/test.txt')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('прочитай файл /tmp/test.txt')">
                                 прочитать файл
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('создай файл /tmp/example.txt с содержимым Hello World')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('создай файл /tmp/example.txt с содержимым Hello World')">
                                 создать файл
                             </span>
                         </div>
@@ -520,19 +853,19 @@
                     <div class="prompt-category mb-3">
                         <small class="text-muted fw-bold">🤖 Общие</small>
                         <div class="d-flex flex-wrap gap-1 mt-1">
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('как дела?')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('как дела?')">
                                 как дела?
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('что нового?')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('что нового?')">
                                 что нового?
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('спасибо')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('спасибо')">
                                 спасибо
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('расскажи о возможностях')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('расскажи о возможностях')">
                                 возможности
                             </span>
-                            <span class="badge bg-light text-dark prompt-badge" onclick="insertTemplate('помоги с настройкой')">
+                            <span class="badge prompt-badge" onclick="insertTemplate('помоги с настройкой')">
                                 помощь с настройкой
                             </span>
                         </div>
@@ -687,19 +1020,20 @@
                 return;
             }
             
+            // Сбрасываем классы
             element.className = 'status-indicator';
             
             if (status === 'active' || status === 'connected' || status === 'healthy') {
-                element.innerHTML = '<i class="fas fa-check-circle text-success"></i> Активен';
+                element.innerHTML = '<i class="fas fa-check-circle"></i> Активен';
                 element.classList.add('status-success');
             } else if (status === 'inactive' || status === 'error' || status === 'unhealthy') {
-                element.innerHTML = '<i class="fas fa-times-circle text-danger"></i> Неактивен';
+                element.innerHTML = '<i class="fas fa-times-circle"></i> Неактивен';
                 element.classList.add('status-error');
             } else if (status === 'disabled') {
-                element.innerHTML = '<i class="fas fa-ban text-warning"></i> Отключен';
+                element.innerHTML = '<i class="fas fa-ban"></i> Отключен';
                 element.classList.add('status-warning');
             } else {
-                element.innerHTML = '<i class="fas fa-question-circle text-warning"></i> Неизвестно';
+                element.innerHTML = '<i class="fas fa-question-circle"></i> Неизвестно';
                 element.classList.add('status-warning');
             }
         }
