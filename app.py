@@ -105,7 +105,7 @@ async def startup_event():
         init_database(database_url)
         
         # Инициализация MCP клиента
-        await mcp_client.initialize()
+        await mcp_client.initialize_servers()
         
         logger.info("✅ MCP Chat запущен успешно")
         
@@ -800,7 +800,7 @@ async def process_command(message: str, user_context: dict = None) -> str:
     """Обрабатывает команды пользователя с использованием MCP клиента"""
     try:
         # Используем MCP клиент для обработки сообщений
-        response = await mcp_client.process_message(message, user_context)
+        response = await mcp_client.process_message_with_llm(message, user_context)
         return response
     except Exception as e:
         logger.error(f"❌ Ошибка обработки команды: {e}")
