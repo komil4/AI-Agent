@@ -13,7 +13,7 @@ import logging
 from atlassian import Confluence
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-from .base_fastmcp_server import BaseFastMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
+from .base_mcp_server import BaseMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # ПРОГРАММНЫЙ ИНТЕРФЕЙС (API)
 # ============================================================================
 
-class AtlassianFastMCPServer(BaseFastMCPServer):
+class AtlassianMCPServer(BaseMCPServer):
     """MCP сервер для работы с Atlassian Confluence - создание и управление документацией, страницами и знаниями"""
     
     def __init__(self):
@@ -832,4 +832,4 @@ class AtlassianFastMCPServer(BaseFastMCPServer):
 # ============================================================================
 
 # Глобальный экземпляр Atlassian сервера
-atlassian_server = AtlassianFastMCPServer()
+atlassian_server = AtlassianMCPServer()

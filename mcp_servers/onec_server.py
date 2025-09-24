@@ -14,7 +14,7 @@ import logging
 from requests.auth import HTTPBasicAuth
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-from .base_fastmcp_server import BaseFastMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
+from .base_mcp_server import BaseMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # ПРОГРАММНЫЙ ИНТЕРФЕЙС (API)
 # ============================================================================
 
-class OneCFastMCPServer(BaseFastMCPServer):
+class OneCMCPServer(BaseMCPServer):
     """MCP сервер для работы с 1С - получение информации о задачах пользователей и деталях задач через HTTP API"""
     
     def __init__(self):
@@ -888,4 +888,4 @@ class OneCFastMCPServer(BaseFastMCPServer):
 # ============================================================================
 
 # Глобальный экземпляр 1C сервера
-onec_server = OneCFastMCPServer()
+onec_server = OneCMCPServer()

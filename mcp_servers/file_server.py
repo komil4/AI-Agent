@@ -2,11 +2,11 @@ import os
 import logging
 from typing import Dict, Any, List
 from config.config_manager import ConfigManager
-from .base_fastmcp_server import BaseFastMCPServer
+from .base_mcp_server import BaseMCPServer
 
 logger = logging.getLogger(__name__)
 
-class FileMCPServer(BaseFastMCPServer):
+class FileMCPServer(BaseMCPServer):
     """MCP сервер для работы с файлами - чтение, запись и управление файлами"""
     
     def _get_description(self) -> str:

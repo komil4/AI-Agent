@@ -37,7 +37,7 @@ class MCPServerDiscovery:
             # Исключаем служебные файлы
             excluded_files = {
                 "__init__.py",
-                "base_fastmcp_server.py", 
+                "base_mcp_server.py", 
                 "server_discovery.py"
             }
             
@@ -81,8 +81,8 @@ class MCPServerDiscovery:
             for name, obj in inspect.getmembers(module, inspect.isclass):
                 # Проверяем, что класс определен в этом модуле
                 if obj.__module__ == module.__name__:
-                    # Ищем классы, которые заканчиваются на MCPServer или FastMCPServer
-                    if name.endswith('MCPServer') or name.endswith('FastMCPServer'):
+                    # Ищем классы, которые заканчиваются на MCPServer
+                    if name.endswith('MCPServer'):
                         # Извлекаем имя сервера из имени класса
                         server_name = self._extract_server_name(name, module_name)
                         server_classes[server_name] = obj
@@ -95,7 +95,7 @@ class MCPServerDiscovery:
     def _extract_server_name(self, class_name: str, module_name: str) -> str:
         """Извлекает имя сервера из имени класса или модуля"""
         # Убираем суффиксы
-        name = class_name.replace('MCPServer', '').replace('FastMCPServer', '')
+        name = class_name.replace('MCPServer', '')
         
         # Если имя пустое, используем имя модуля
         if not name:

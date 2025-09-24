@@ -11,7 +11,7 @@ import ldap3
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-from .base_fastmcp_server import BaseFastMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
+from .base_mcp_server import BaseMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # ПРОГРАММНЫЙ ИНТЕРФЕЙС (API)
 # ============================================================================
 
-class LDAPFastMCPServer(BaseFastMCPServer):
+class LDAPMCPServer(BaseMCPServer):
     """MCP сервер для работы с LDAP/Active Directory - поиск пользователей, групп и управление корпоративными данными"""
     
     def __init__(self):
@@ -938,4 +938,4 @@ class LDAPFastMCPServer(BaseFastMCPServer):
 # ============================================================================
 
 # Глобальный экземпляр LDAP сервера
-ldap_server = LDAPFastMCPServer()
+ldap_server = LDAPMCPServer()

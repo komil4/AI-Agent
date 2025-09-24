@@ -14,7 +14,7 @@ from jira import JIRA
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from analyzers.code_analyzer import CodeAnalyzer
-from .base_fastmcp_server import BaseFastMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
+from .base_mcp_server import BaseMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # ПРОГРАММНЫЙ ИНТЕРФЕЙС (API)
 # ============================================================================
 
-class JiraFastMCPServer(BaseFastMCPServer):
+class JiraMCPServer(BaseMCPServer):
     """MCP сервер для работы с Jira - управление задачами, проектами и отслеживанием проблем"""
     
     def __init__(self):
@@ -638,4 +638,4 @@ class JiraFastMCPServer(BaseFastMCPServer):
 # ============================================================================
 
 # Глобальный экземпляр Jira сервера
-jira_server = JiraFastMCPServer()
+jira_server = JiraMCPServer()

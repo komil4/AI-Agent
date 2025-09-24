@@ -12,7 +12,7 @@ import gitlab
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-from .base_fastmcp_server import BaseFastMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
+from .base_mcp_server import BaseMCPServer, create_tool_schema, validate_tool_parameters, format_tool_response
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # ПРОГРАММНЫЙ ИНТЕРФЕЙС (API)
 # ============================================================================
 
-class GitLabFastMCPServer(BaseFastMCPServer):
+class GitLabMCPServer(BaseMCPServer):
     """MCP сервер для работы с GitLab - управление репозиториями, проектами, merge requests и коммитами"""
     
     def __init__(self):
@@ -860,4 +860,4 @@ class GitLabFastMCPServer(BaseFastMCPServer):
 # ============================================================================
 
 # Глобальный экземпляр GitLab сервера
-gitlab_server = GitLabFastMCPServer()
+gitlab_server = GitLabMCPServer()
