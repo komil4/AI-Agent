@@ -1,13 +1,13 @@
 import os
 from typing import Dict, Any, List
 from config.config_manager import ConfigManager
-from . import BaseMCPServer
+from .base_fastmcp_server import BaseFastMCPServer
 
-class FileMCPServer(BaseMCPServer):
+class FileMCPServer(BaseFastMCPServer):
     """MCP сервер для работы с файлами - чтение, запись и управление файлами"""
     
     def __init__(self):
-        super().__init__()
+        super().__init__("file")
         self.description = "Файловая система - чтение, запись и управление файлами"
         
         # Настройки для админ-панели

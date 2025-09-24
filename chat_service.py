@@ -108,12 +108,18 @@ class ChatService:
                 User.password_hash.isnot(None)
             ).first()
             
-            if user and self.verify_password(password, user.password_hash):
-                # Обновляем время последнего входа
-                user.last_login = datetime.utcnow()
-                session.commit()
-                logger.info(f"✅ Локальная аутентификация успешна: {username}")
-                return user
+            if user and user.password_hash:
+                try:
+                    if self.verify_password(password, user.password_hash):
+                        # Обновляем время последнего входа
+                        user.last_login = datetime.utcnow()
+                        session.commit()
+                        logger.info(f"✅ Локальная аутентификация успешна: {username}")
+                        return user
+                except Exception as e:
+                    logger.error(f"❌ Ошибка проверки пароля для пользователя {username}: {e}")
+                    # Если ошибка с хешем, считаем пароль неверным
+                    pass
             
             logger.warning(f"❌ Неверные учетные данные для локального пользователя: {username}")
             return None
@@ -357,7 +363,15 @@ class ChatService:
         """Проверяет пароль"""
         if not PASSWORD_AVAILABLE:
             raise RuntimeError("passlib не установлен")
-        return pwd_context.verify(plain_password, hashed_password)
+        
+        try:
+            return pwd_context.verify(plain_password, hashed_password)
+        except ValueError as e:
+            if "unsupported hash type" in str(e):
+                logger.warning(f"⚠️ Неподдерживаемый тип хеша: {e}")
+                # Если хеш неподдерживаемый, считаем пароль неверным
+                return False
+            raise
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ

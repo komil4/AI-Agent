@@ -31,19 +31,17 @@ except ImportError:
 try:
     from passlib.context import CryptContext
     PASSWORD_AVAILABLE = True
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 except ImportError:
     PASSWORD_AVAILABLE = False
+    pwd_context = None
     print("⚠️ passlib не установлен. Хеширование паролей будет недоступно.")
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Настройка для хеширования паролей
-if PASSWORD_AVAILABLE:
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-else:
-    pwd_context = None
+# pwd_context уже создан выше в блоке try/except
 
 # ============================================================================
 # ПРОГРАММНЫЙ ИНТЕРФЕЙС (API)
@@ -76,13 +74,19 @@ class ADAuthenticator:
         
         try:
             # Подключение к LDAP серверу
-            conn = Connection(
-                self.ad_server,
-                user=f"{self.ad_domain}\\{username}",
-                password=password,
-                authentication=NTLM,
-                auto_bind=True
-            )
+            try:
+                conn = Connection(
+                    self.ad_server,
+                    user=f"{self.ad_domain}\\{username}",
+                    password=password,
+                    authentication=NTLM,
+                    auto_bind=True
+                )
+            except ValueError as e:
+                if "unsupported hash type" in str(e):
+                    logger.warning(f"⚠️ Неподдерживаемый тип хеша при LDAP аутентификации: {e}")
+                    return None
+                raise
             
             # Поиск пользователя в AD
             search_filter = f"(sAMAccountName={username})"

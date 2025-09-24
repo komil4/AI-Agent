@@ -21,12 +21,9 @@ class ServiceStatus(BaseModel):
     available_models: Optional[List[str]] = None
 
 class HealthResponse(BaseModel):
-    llm: ServiceStatus
-    jira: ServiceStatus
-    atlassian: ServiceStatus
-    gitlab: ServiceStatus
-    onec: ServiceStatus
-    ldap: Optional[ServiceStatus] = None
+    status: str
+    services: Dict[str, ServiceStatus]
+    timestamp: str
 
 # Auth models
 class LoginRequest(BaseModel):
