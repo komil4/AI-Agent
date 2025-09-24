@@ -26,11 +26,14 @@ class AtlassianFastMCPServer(BaseFastMCPServer):
     
     def __init__(self):
         """Инициализация Atlassian MCP сервера"""
-        super().__init__("atlassian")
+        # Инициализируем переменные ДО вызова super().__init__()
         self.confluence_url = None
         self.username = None
         self.api_token = None
         self.confluence = None
+        
+        # Теперь вызываем родительский конструктор
+        super().__init__("atlassian")
         
         # Настройки для админ-панели
         self.display_name = "Confluence MCP"

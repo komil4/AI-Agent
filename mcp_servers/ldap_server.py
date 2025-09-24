@@ -24,13 +24,16 @@ class LDAPFastMCPServer(BaseFastMCPServer):
     
     def __init__(self):
         """Инициализация LDAP MCP сервера"""
-        super().__init__("active_directory")
+        # Инициализируем переменные ДО вызова super().__init__()
         self.ldap_url = None
         self.ldap_user = None
         self.ldap_password = None
         self.base_dn = None
         self.domain = None
         self.connection = None
+        
+        # Теперь вызываем родительский конструктор
+        super().__init__("active_directory")
         
         # Настройки для админ-панели
         self.display_name = "LDAP MCP"

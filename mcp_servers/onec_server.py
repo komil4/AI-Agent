@@ -27,12 +27,15 @@ class OneCFastMCPServer(BaseFastMCPServer):
     
     def __init__(self):
         """Инициализация 1C MCP сервера"""
-        super().__init__("onec")
+        # Инициализируем переменные ДО вызова super().__init__()
         self.url = None
         self.api_path = None
         self.username = None
         self.password = None
         self.auth = None
+        
+        # Теперь вызываем родительский конструктор
+        super().__init__("onec")
         
         # Настройки для админ-панели
         self.display_name = "1C MCP"

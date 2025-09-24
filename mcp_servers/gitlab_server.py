@@ -25,10 +25,13 @@ class GitLabFastMCPServer(BaseFastMCPServer):
     
     def __init__(self):
         """Инициализация GitLab MCP сервера"""
-        super().__init__("gitlab")
+        # Инициализируем переменные ДО вызова super().__init__()
         self.gitlab_url = None
         self.access_token = None
         self.gitlab = None
+        
+        # Теперь вызываем родительский конструктор
+        super().__init__("gitlab")
         
         # Настройки для админ-панели
         self.display_name = "GitLab MCP"

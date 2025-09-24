@@ -27,12 +27,15 @@ class JiraFastMCPServer(BaseFastMCPServer):
     
     def __init__(self):
         """Инициализация Jira MCP сервера"""
-        super().__init__("jira")
+        # Инициализируем переменные ДО вызова super().__init__()
         self.jira_url = None
         self.username = None
         self.api_token = None
         self.jira = None
         self.code_analyzer = CodeAnalyzer()
+        
+        # Теперь вызываем родительский конструктор
+        super().__init__("jira")
         
         # Настройки для админ-панели
         self.display_name = "Jira MCP"
