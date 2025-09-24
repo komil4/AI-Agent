@@ -1,14 +1,20 @@
 import os
+import logging
 from typing import Dict, Any, List
 from config.config_manager import ConfigManager
 from .base_fastmcp_server import BaseFastMCPServer
 
+logger = logging.getLogger(__name__)
+
 class FileMCPServer(BaseFastMCPServer):
     """MCP сервер для работы с файлами - чтение, запись и управление файлами"""
     
+    def _get_description(self) -> str:
+        """Возвращает описание сервера"""
+        return "Файловая система - чтение, запись и управление файлами"
+    
     def __init__(self):
         super().__init__("file")
-        self.description = "Файловая система - чтение, запись и управление файлами"
         
         # Настройки для админ-панели
         self.display_name = "File MCP"
@@ -206,10 +212,6 @@ class FileMCPServer(BaseFastMCPServer):
                 'provider': 'file',
                 'error': str(e)
             }
-    
-    def _get_description(self) -> str:
-        """Возвращает описание сервера"""
-        return self.description
     
     def _load_config(self):
         """Загружает конфигурацию сервера"""

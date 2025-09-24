@@ -8,6 +8,7 @@
 # ============================================================================
 
 import logging
+import time
 from typing import Dict, Any, List, Optional
 from abc import ABC, abstractmethod
 from config.config_manager import ConfigManager
@@ -26,6 +27,12 @@ class BaseFastMCPServer(ABC):
         self.server_name = server_name
         self.description = self._get_description()
         self.config_manager = ConfigManager()
+        
+        # Кэширование состояния подключения
+        self._connection_status = None  # None, True, False
+        self._last_connection_check = 0
+        self._connection_check_interval = 30  # секунд
+        
         self._load_config()
         self._connect()
     
@@ -54,11 +61,29 @@ class BaseFastMCPServer(ABC):
             return False
     
     def test_connection(self) -> bool:
-        """Тестирует подключение к сервису"""
+        """Тестирует подключение к сервису с кэшированием"""
         try:
-            return self._test_connection()
+            current_time = time.time()
+            
+            # Проверяем, нужно ли обновить кэш
+            if (self._connection_status is None or 
+                current_time - self._last_connection_check > self._connection_check_interval):
+                
+                # Выполняем проверку подключения
+                self._connection_status = self._test_connection()
+                self._last_connection_check = current_time
+                
+                if self._connection_status:
+                    logger.debug(f"✅ Подключение к {self.server_name} проверено: OK")
+                else:
+                    logger.debug(f"❌ Подключение к {self.server_name} проверено: FAILED")
+            
+            return self._connection_status
+            
         except Exception as e:
             logger.error(f"❌ Ошибка тестирования подключения {self.server_name}: {e}")
+            self._connection_status = False
+            self._last_connection_check = time.time()
             return False
     
     @abstractmethod
@@ -72,9 +97,23 @@ class BaseFastMCPServer(ABC):
             logger.info(f"🔄 Переподключение к {self.server_name}...")
             self._load_config()
             self._connect()
+            
+            # Сбрасываем кэш после переподключения
+            self._connection_status = None
+            self._last_connection_check = 0
+            
             logger.info(f"✅ Переподключение к {self.server_name} завершено")
         except Exception as e:
             logger.error(f"❌ Ошибка переподключения к {self.server_name}: {e}")
+            # Помечаем как недоступный
+            self._connection_status = False
+            self._last_connection_check = time.time()
+    
+    def invalidate_connection_cache(self):
+        """Принудительно сбрасывает кэш подключения"""
+        self._connection_status = None
+        self._last_connection_check = 0
+        logger.debug(f"🔄 Кэш подключения {self.server_name} сброшен")
     
     def get_server_info(self) -> Dict[str, Any]:
         """Возвращает информацию о сервере"""
@@ -86,10 +125,9 @@ class BaseFastMCPServer(ABC):
         }
     
     def get_health_status(self) -> Dict[str, Any]:
-        """Возвращает статус здоровья сервера"""
+        """Возвращает статус здоровья сервера с кэшированием"""
         try:
             is_enabled = self.is_enabled()
-            is_connected = self.test_connection()
             
             if not is_enabled:
                 return {
@@ -98,17 +136,24 @@ class BaseFastMCPServer(ABC):
                     'message': 'Сервер отключен в конфигурации'
                 }
             
+            # Используем кэшированное состояние подключения
+            is_connected = self.test_connection()
+            
             if is_connected:
                 return {
                     'status': 'healthy',
                     'provider': self.server_name,
-                    'message': 'Сервер работает нормально'
+                    'message': 'Сервер работает нормально',
+                    'cached': True,
+                    'last_check': self._last_connection_check
                 }
             else:
                 return {
                     'status': 'unhealthy',
                     'provider': self.server_name,
-                    'message': 'Не удается подключиться к серверу'
+                    'message': 'Не удается подключиться к серверу',
+                    'cached': True,
+                    'last_check': self._last_connection_check
                 }
                 
         except Exception as e:

@@ -205,18 +205,14 @@ class MCPClient:
         return all_tools
     
     def _is_server_available(self, server_name: str, server: Any) -> bool:
-        """Проверяет доступность сервера"""
+        """Проверяет доступность сервера с кэшированием"""
         try:
             # Проверяем, что сервер включен
             if hasattr(server, 'is_enabled') and callable(server.is_enabled):
                 if server.is_enabled():
-                    # Проверяем здоровье сервера через get_health_status
-                    if hasattr(server, 'get_health_status') and callable(server.get_health_status):
-                        health = server.get_health_status()
-                        return health.get('status') == 'healthy'
-                    # Или через test_connection если есть
-                    elif hasattr(server, 'test_connection') and callable(server.test_connection):
-                        return server.test_connection()
+                    # Используем кэшированную проверку подключения
+                    if hasattr(server, 'test_connection') and callable(server.test_connection):
+                        return server.test_connection()  # Уже использует кэширование
                     # Если нет методов проверки, считаем доступным
                     else:
                         logger.warning(f"⚠️ Сервер {server_name} не имеет методов проверки здоровья")
@@ -345,6 +341,13 @@ class MCPClient:
                 
         except Exception as e:
             logger.error(f"❌ Ошибка вызова инструмента {tool_name} на {server_name}: {e}")
+            
+            # При ошибке сбрасываем кэш подключения для этого сервера
+            if server_name in builtin_servers:
+                server = builtin_servers[server_name]
+                if hasattr(server, 'invalidate_connection_cache'):
+                    server.invalidate_connection_cache()
+            
             return {"error": f"Ошибка вызова инструмента: {str(e)}"}
     
     async def close_all_sessions(self):
