@@ -303,7 +303,7 @@ class AtlassianMCPServer(BaseMCPServer):
     
     def _get_description(self) -> str:
         """Возвращает описание сервера"""
-        return "Atlassian Confluence MCP сервер - создание и управление документацией, страницами и знаниями в Confluence"
+        return "atlassian: Создание, поиск, обновление страниц в Atlassian Confluence. Инструменты: search_pages, create_page, list_pages, get_page_content, update_page, list_spaces, add_comment, get_page_history, delete_page"
     
     def _load_config(self):
         """Загружает конфигурацию Atlassian"""

@@ -246,7 +246,7 @@ class JiraMCPServer(BaseMCPServer):
     
     def _get_description(self) -> str:
         """Возвращает описание сервера"""
-        return "Jira MCP сервер - управление задачами, проектами и отслеживанием проблем в Atlassian Jira"
+        return "jira: Создание, поиск, обновление задач в Atlassian Jira. Инструменты: create_issue, search_issues, get_issue_details, update_issue, add_comment, list_projects, transition_issue"
     
     def _load_config(self):
         """Загружает конфигурацию Jira"""

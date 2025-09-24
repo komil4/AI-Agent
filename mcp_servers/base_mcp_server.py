@@ -41,6 +41,10 @@ class BaseMCPServer(ABC):
         """Возвращает описание сервера"""
         pass
     
+    def get_description(self) -> str:
+        """Возвращает описание сервера (публичный метод)"""
+        return self._get_description()
+    
     @abstractmethod
     def _load_config(self):
         """Загружает конфигурацию сервера"""

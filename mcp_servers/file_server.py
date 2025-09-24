@@ -11,7 +11,7 @@ class FileMCPServer(BaseMCPServer):
     
     def _get_description(self) -> str:
         """Возвращает описание сервера"""
-        return "Файловая система - чтение, запись и управление файлами"
+        return "file: Операции с файлами и директориями. Инструменты: read_file, write_file, list_directory, create_directory, delete_file, copy_file, move_file, get_file_info"
     
     def __init__(self):
         super().__init__("file")

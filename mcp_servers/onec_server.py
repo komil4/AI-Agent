@@ -338,7 +338,7 @@ class OneCMCPServer(BaseMCPServer):
     
     def _get_description(self) -> str:
         """Возвращает описание сервера"""
-        return "1С MCP сервер - получение информации о задачах пользователей и деталях задач через HTTP API 1С"
+        return "onec: Управление задачами и проектами в 1С через HTTP API. Инструменты: get_user_tasks, get_task_info, create_task, update_task, add_task_comment, list_projects, get_project_info, list_users, get_user_info, search_tasks"
     
     def _load_config(self):
         """Загружает конфигурацию 1С"""
@@ -380,7 +380,7 @@ class OneCMCPServer(BaseMCPServer):
         try:
             # Пробуем выполнить простой запрос
             response = requests.get(
-                f"{self.url}/api/health",
+                f"{self.url}{self.api_path}/health",
                 auth=self.auth,
                 timeout=10
             )
@@ -464,7 +464,7 @@ class OneCMCPServer(BaseMCPServer):
             
             # Выполняем HTTP запрос к API 1С
             response = requests.get(
-                f"{self.url}{self.api_path}/{task_id}",
+                f"{self.url}{self.api_path}/tasks/{task_id}",
                 auth=self.auth,
                 params=params,
                 timeout=30
@@ -509,7 +509,7 @@ class OneCMCPServer(BaseMCPServer):
             
             # Выполняем HTTP запрос к API 1С
             response = requests.post(
-                f"{self.url}{self.api_path}",
+                f"{self.url}{self.api_path}/task",
                 auth=self.auth,
                 json=task_data,
                 timeout=30
@@ -846,7 +846,7 @@ class OneCMCPServer(BaseMCPServer):
             if hasattr(self, 'auth') and self.auth:
                 # Пытаемся выполнить простой запрос для проверки подключения
                 response = requests.get(
-                    f"{self.base_url}/api/v1/tasks",
+                    f"{self.url}{self.api_path}/ping",
                     headers=self.auth,
                     timeout=5
                 )
@@ -855,8 +855,8 @@ class OneCMCPServer(BaseMCPServer):
                     return {
                         'status': 'healthy',
                         'provider': 'onec',
-                        'message': f'Подключение к 1C успешно. Сервер: {self.base_url}',
-                        'server_url': self.base_url
+                        'message': f'Подключение к 1C успешно. Сервер: {self.url}',
+                        'server_url': self.url
                     }
                 else:
                     return {

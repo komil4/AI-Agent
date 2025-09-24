@@ -319,7 +319,7 @@ class LDAPMCPServer(BaseMCPServer):
     
     def _get_description(self) -> str:
         """Возвращает описание сервера"""
-        return "LDAP/Active Directory MCP сервер - поиск пользователей, групп и управление корпоративными данными в LDAP/AD"
+        return "ldap: Поиск пользователей и групп в LDAP/Active Directory. Инструменты: search_users, get_user_details, list_users, search_groups, get_group_details, list_groups, get_user_groups, get_group_members, authenticate_user, get_ldap_info"
     
     def _load_config(self):
         """Загружает конфигурацию LDAP"""

@@ -330,7 +330,7 @@ class GitLabMCPServer(BaseMCPServer):
     
     def _get_description(self) -> str:
         """Возвращает описание сервера"""
-        return "GitLab MCP сервер - управление репозиториями, проектами, merge requests и коммитами в GitLab"
+        return "gitlab: Управление проектами, ветками, merge requests в GitLab. Инструменты: list_projects, get_project_details, get_project_commits, create_merge_request, list_merge_requests, list_branches, create_branch, get_file_content"
     
     def _load_config(self):
         """Загружает конфигурацию GitLab"""

@@ -103,6 +103,60 @@
             overflow-y: auto;
         }
         
+        /* Стили для истории чатов */
+        .chat-session-item {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.85rem;
+        }
+        
+        .chat-session-item:hover {
+            background: #e9ecef;
+            border-color: var(--primary-light);
+        }
+        
+        .chat-session-item.active {
+            background: var(--primary-light);
+            color: white;
+            border-color: var(--primary-medium);
+        }
+        
+        .chat-session-item.active:hover {
+            background: var(--primary-medium);
+        }
+        
+        .chat-session-title {
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+        
+        .chat-session-preview {
+            color: #6c757d;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .chat-session-item.active .chat-session-preview {
+            color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .chat-session-time {
+            font-size: 0.7rem;
+            color: #adb5bd;
+            margin-top: 2px;
+        }
+        
+        .chat-session-item.active .chat-session-time {
+            color: rgba(255, 255, 255, 0.7);
+        }
+        
         .prompt-badge {
             cursor: pointer;
             transition: all 0.3s ease;
@@ -262,6 +316,21 @@
                 </div>
                 <hr>
                 
+                <!-- История чатов -->
+                <h6><i class="fas fa-history"></i> История чатов</h6>
+                <div id="chat-history" class="mb-3">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-primary btn-sm" onclick="createNewChat()">
+                            <i class="fas fa-plus"></i> Новый чат
+                        </button>
+                    </div>
+                    <div id="chat-sessions-list" class="mt-2">
+                        <!-- Список сессий чата будет здесь -->
+                    </div>
+                </div>
+                
+                <hr>
+                
                 <!-- Статус сервисов -->
                 <h6><i class="fas fa-server"></i> Статус сервисов</h6>
                 <div id="services-status">
@@ -271,23 +340,23 @@
                     </div>
                     <div class="mb-2" data-service="jira">
                         <span class="status-indicator" id="jira-status"></span>
-                        <small>Jira MCP</small>
+                        <small>Jira - Управление задачами</small>
                     </div>
                     <div class="mb-2" data-service="atlassian">
                         <span class="status-indicator" id="atlassian-status"></span>
-                        <small>Confluence MCP</small>
+                        <small>Confluence - Документация</small>
                     </div>
                     <div class="mb-2" data-service="gitlab">
                         <span class="status-indicator" id="gitlab-status"></span>
-                        <small>GitLab MCP</small>
+                        <small>GitLab - Репозитории</small>
                     </div>
                     <div class="mb-2" data-service="onec">
                         <span class="status-indicator" id="onec-status"></span>
-                        <small>1С MCP</small>
+                        <small>1С - Задачи и данные</small>
                     </div>
                     <div class="mb-2" data-service="file">
                         <span class="status-indicator" id="file-status"></span>
-                        <small>Файлы MCP</small>
+                        <small>Файловая система</small>
                     </div>
                     <div class="mb-2" data-service="database">
                         <span class="status-indicator" id="database-status"></span>
@@ -495,6 +564,9 @@
                     <button class="btn btn-outline-secondary" onclick="toggleChatSuggestions()" title="Показать подсказки">
                         <i class="fas fa-lightbulb"></i>
                     </button>
+                    <button class="btn btn-outline-success" onclick="createNewChat()" title="Новый чат">
+                        <i class="fas fa-plus"></i>
+                    </button>
                     <button class="btn btn-primary" onclick="sendMessage()">
                         <i class="fas fa-paper-plane"></i> Отправить
                     </button>
@@ -626,6 +698,8 @@
             
             if (!message) return;
             
+            // Добавляем сообщение в текущую сессию
+            addMessageToSession(message, 'user');
             addMessage(message, 'user');
             input.value = '';
             
@@ -651,14 +725,20 @@
             .then(data => {
                 hideTypingIndicator();
                 if (data.status === 'success') {
+                    // Добавляем ответ бота в сессию
+                    addMessageToSession(data.response, 'bot');
                     addMessage(data.response, 'bot');
                 } else {
-                    addMessage('❌ Ошибка: ' + (data.detail || data.error), 'bot');
+                    const errorMsg = '❌ Ошибка: ' + (data.detail || data.error);
+                    addMessageToSession(errorMsg, 'bot');
+                    addMessage(errorMsg, 'bot');
                 }
             })
             .catch(error => {
                 hideTypingIndicator();
-                addMessage('❌ Ошибка соединения: ' + error.message, 'bot');
+                const errorMsg = '❌ Ошибка соединения: ' + error.message;
+                addMessageToSession(errorMsg, 'bot');
+                addMessage(errorMsg, 'bot');
             });
         }
 
@@ -881,6 +961,212 @@
 
         // Автоматическая проверка статуса каждые 30 секунд
         setInterval(checkServicesStatus, 30000);
+        
+        // ============================================================================
+        // УПРАВЛЕНИЕ СЕССИЯМИ ЧАТА
+        // ============================================================================
+        
+        // Глобальные переменные для управления сессиями
+        let currentSessionId = null;
+        let chatSessions = new Map(); // Хранит сессии в памяти
+        let sessionCounter = 1;
+        
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            createNewChat(); // Создаем первую сессию
+            loadChatSessions(); // Загружаем существующие сессии
+        });
+        
+        // Создание новой сессии чата
+        function createNewChat() {
+            const sessionId = `session_${Date.now()}_${sessionCounter++}`;
+            const sessionTitle = `Чат ${sessionCounter}`;
+            
+            // Создаем новую сессию
+            const newSession = {
+                id: sessionId,
+                title: sessionTitle,
+                messages: [],
+                createdAt: new Date(),
+                lastMessageAt: new Date()
+            };
+            
+            // Сохраняем сессию
+            chatSessions.set(sessionId, newSession);
+            
+            // Переключаемся на новую сессию
+            switchToSession(sessionId);
+            
+            // Обновляем список сессий
+            updateChatSessionsList();
+            
+            // Очищаем поле ввода
+            document.getElementById('message-input').value = '';
+            
+            console.log('Создана новая сессия:', sessionId);
+        }
+        
+        // Переключение на сессию
+        function switchToSession(sessionId) {
+            if (!chatSessions.has(sessionId)) {
+                console.error('Сессия не найдена:', sessionId);
+                return;
+            }
+            
+            // Обновляем текущую сессию
+            currentSessionId = sessionId;
+            
+            // Очищаем чат
+            const chatContainer = document.getElementById('chat-container');
+            chatContainer.innerHTML = '';
+            
+            // Загружаем сообщения сессии
+            const session = chatSessions.get(sessionId);
+            session.messages.forEach(message => {
+                addMessageToChat(message.text, message.sender, false);
+            });
+            
+            // Обновляем активную сессию в списке
+            updateActiveSessionInList();
+            
+            // Прокручиваем вниз
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            
+            console.log('Переключились на сессию:', sessionId);
+        }
+        
+        // Добавление сообщения в текущую сессию
+        function addMessageToSession(text, sender) {
+            if (!currentSessionId || !chatSessions.has(currentSessionId)) {
+                console.error('Нет активной сессии');
+                return;
+            }
+            
+            const session = chatSessions.get(currentSessionId);
+            const message = {
+                text: text,
+                sender: sender,
+                timestamp: new Date()
+            };
+            
+            session.messages.push(message);
+            session.lastMessageAt = new Date();
+            
+            // Обновляем заголовок сессии на основе первого сообщения
+            if (session.messages.length === 1 && sender === 'user') {
+                session.title = text.length > 30 ? text.substring(0, 30) + '...' : text;
+            }
+            
+            // Обновляем список сессий
+            updateChatSessionsList();
+        }
+        
+        // Обновление списка сессий в боковой панели
+        function updateChatSessionsList() {
+            const sessionsList = document.getElementById('chat-sessions-list');
+            if (!sessionsList) return;
+            
+            // Сортируем сессии по времени последнего сообщения
+            const sortedSessions = Array.from(chatSessions.values())
+                .sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+            
+            sessionsList.innerHTML = '';
+            
+            sortedSessions.forEach(session => {
+                const sessionItem = document.createElement('div');
+                sessionItem.className = `chat-session-item ${session.id === currentSessionId ? 'active' : ''}`;
+                sessionItem.onclick = () => switchToSession(session.id);
+                
+                const preview = session.messages.length > 0 
+                    ? session.messages[session.messages.length - 1].text
+                    : 'Новый чат';
+                
+                const timeStr = formatTime(session.lastMessageAt);
+                
+                sessionItem.innerHTML = `
+                    <div class="chat-session-title">${session.title}</div>
+                    <div class="chat-session-preview">${preview}</div>
+                    <div class="chat-session-time">${timeStr}</div>
+                `;
+                
+                sessionsList.appendChild(sessionItem);
+            });
+        }
+        
+        // Обновление активной сессии в списке
+        function updateActiveSessionInList() {
+            const sessionItems = document.querySelectorAll('.chat-session-item');
+            sessionItems.forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            const activeItem = document.querySelector(`[onclick*="${currentSessionId}"]`);
+            if (activeItem) {
+                activeItem.classList.add('active');
+            }
+        }
+        
+        // Форматирование времени
+        function formatTime(date) {
+            const now = new Date();
+            const diff = now - date;
+            
+            if (diff < 60000) { // Меньше минуты
+                return 'только что';
+            } else if (diff < 3600000) { // Меньше часа
+                return `${Math.floor(diff / 60000)} мин назад`;
+            } else if (diff < 86400000) { // Меньше дня
+                return `${Math.floor(diff / 3600000)} ч назад`;
+            } else {
+                return date.toLocaleDateString('ru-RU');
+            }
+        }
+        
+        // Загрузка сессий (пока из localStorage, позже можно из API)
+        function loadChatSessions() {
+            try {
+                const savedSessions = localStorage.getItem('chatSessions');
+                if (savedSessions) {
+                    const sessionsData = JSON.parse(savedSessions);
+                    sessionsData.forEach(sessionData => {
+                        // Восстанавливаем даты
+                        sessionData.createdAt = new Date(sessionData.createdAt);
+                        sessionData.lastMessageAt = new Date(sessionData.lastMessageAt);
+                        sessionData.messages.forEach(msg => {
+                            msg.timestamp = new Date(msg.timestamp);
+                        });
+                        
+                        chatSessions.set(sessionData.id, sessionData);
+                    });
+                    
+                    // Если есть сохраненные сессии, переключаемся на последнюю
+                    if (sessionsData.length > 0) {
+                        const lastSession = sessionsData[0];
+                        switchToSession(lastSession.id);
+                    }
+                    
+                    updateChatSessionsList();
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки сессий:', error);
+            }
+        }
+        
+        // Сохранение сессий в localStorage
+        function saveChatSessions() {
+            try {
+                const sessionsArray = Array.from(chatSessions.values());
+                localStorage.setItem('chatSessions', JSON.stringify(sessionsArray));
+            } catch (error) {
+                console.error('Ошибка сохранения сессий:', error);
+            }
+        }
+        
+        // Автосохранение каждые 30 секунд
+        setInterval(saveChatSessions, 30000);
+        
+        // Сохранение при закрытии страницы
+        window.addEventListener('beforeunload', saveChatSessions);
     </script>
 
     <!-- Модальное окно для управления контекстом пользователя -->
