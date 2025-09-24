@@ -854,6 +854,85 @@ class GitLabMCPServer(BaseMCPServer):
     def _get_tools(self) -> List[Dict[str, Any]]:
         """Возвращает список инструментов GitLab сервера"""
         return self.tools
+    
+    def _call_tool_impl(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Реализация вызова конкретного инструмента GitLab сервера"""
+        try:
+            if tool_name == "list_projects":
+                return self.list_projects(
+                    arguments.get('search'),
+                    arguments.get('owned', False),
+                    arguments.get('membership', False),
+                    arguments.get('starred', False),
+                    arguments.get('visibility'),
+                    arguments.get('order_by', 'created_at'),
+                    arguments.get('sort', 'desc'),
+                    arguments.get('per_page', 20),
+                    arguments.get('page', 1)
+                )
+            elif tool_name == "get_project_details":
+                return self.get_project_details(
+                    arguments.get('project_id', ''),
+                    arguments.get('include_statistics', False)
+                )
+            elif tool_name == "get_project_commits":
+                return self.get_project_commits(
+                    arguments.get('project_id', ''),
+                    arguments.get('ref_name'),
+                    arguments.get('since'),
+                    arguments.get('until'),
+                    arguments.get('path'),
+                    arguments.get('author'),
+                    arguments.get('per_page', 20),
+                    arguments.get('page', 1)
+                )
+            elif tool_name == "create_merge_request":
+                return self.create_merge_request(
+                    arguments.get('project_id', ''),
+                    arguments.get('source_branch', ''),
+                    arguments.get('target_branch', ''),
+                    arguments.get('title', ''),
+                    arguments.get('description', ''),
+                    arguments.get('assignee_id'),
+                    arguments.get('reviewer_ids', []),
+                    arguments.get('labels', [])
+                )
+            elif tool_name == "list_merge_requests":
+                return self.list_merge_requests(
+                    arguments.get('project_id', ''),
+                    arguments.get('state'),
+                    arguments.get('author_id'),
+                    arguments.get('assignee_id'),
+                    arguments.get('reviewer_id'),
+                    arguments.get('labels'),
+                    arguments.get('per_page', 20),
+                    arguments.get('page', 1)
+                )
+            elif tool_name == "list_branches":
+                return self.list_branches(
+                    arguments.get('project_id', ''),
+                    arguments.get('search'),
+                    arguments.get('per_page', 20),
+                    arguments.get('page', 1)
+                )
+            elif tool_name == "create_branch":
+                return self.create_branch(
+                    arguments.get('project_id', ''),
+                    arguments.get('branch_name', ''),
+                    arguments.get('ref', 'main')
+                )
+            elif tool_name == "get_file_content":
+                return self.get_file_content(
+                    arguments.get('project_id', ''),
+                    arguments.get('file_path', ''),
+                    arguments.get('ref')
+                )
+            else:
+                return format_tool_response(False, f"Неизвестный инструмент: {tool_name}")
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка выполнения инструмента {tool_name}: {e}")
+            return format_tool_response(False, f"Ошибка выполнения: {str(e)}")
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ

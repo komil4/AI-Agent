@@ -223,6 +223,56 @@ class BaseMCPServer(ABC):
                 'fields': [],
                 'enabled': False
             }
+    
+    def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Вызывает инструмент сервера
+        
+        Args:
+            tool_name: Имя инструмента
+            arguments: Аргументы для инструмента
+            
+        Returns:
+            Результат выполнения инструмента
+        """
+        try:
+            # Проверяем, что инструмент существует
+            tools = self.get_tools()
+            tool_found = False
+            
+            for tool in tools:
+                if tool.get('name') == tool_name:
+                    tool_found = True
+                    break
+            
+            if not tool_found:
+                return format_tool_response(False, f"Инструмент '{tool_name}' не найден")
+            
+            # Валидируем аргументы
+            validation_result = validate_tool_parameters(tool_name, arguments, tools)
+            if not validation_result['valid']:
+                return format_tool_response(False, f"Ошибка валидации: {validation_result['error']}")
+            
+            # Вызываем конкретный инструмент
+            return self._call_tool_impl(tool_name, arguments)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка вызова инструмента {tool_name}: {e}")
+            return format_tool_response(False, f"Ошибка выполнения инструмента: {str(e)}")
+    
+    def _call_tool_impl(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Реализация вызова конкретного инструмента
+        Должна быть переопределена в дочерних классах
+        
+        Args:
+            tool_name: Имя инструмента
+            arguments: Аргументы для инструмента
+            
+        Returns:
+            Результат выполнения инструмента
+        """
+        return format_tool_response(False, f"Инструмент '{tool_name}' не реализован")
 
 # ============================================================================
 # СЛУЖЕБНЫЕ ФУНКЦИИ

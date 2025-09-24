@@ -305,6 +305,8 @@ async def get_current_user(request: Request):
         user_info = session_data.get('user_info', {})
         return {
             "success": True,
+            "username": user_info.get('username', 'Неизвестный пользователь'),
+            "display_name": user_info.get('display_name', user_info.get('username', 'Неизвестный пользователь')),
             "user_info": user_info
         }
         
@@ -1125,6 +1127,139 @@ async def process_command(message: str, user_context: dict = None) -> str:
     except Exception as e:
         logger.error(f"❌ Ошибка обработки команды: {e}")
         return f"Извините, произошла ошибка при обработке команды: {str(e)}"
+
+# ============================================================================
+# API ENDPOINTS ДЛЯ УПРАВЛЕНИЯ СЕССИЯМИ ЧАТА
+# ============================================================================
+
+@app.get("/api/chat/sessions")
+async def get_chat_sessions(request: Request):
+    """Получает список сессий чата пользователя"""
+    try:
+        user_info = await get_current_user_info(request)
+        user_id = user_info['id']
+        
+        sessions = chat_service.get_user_sessions(user_id, limit=50)
+        
+        return {
+            "success": True,
+            "sessions": sessions
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения сессий чата: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка получения сессий чата: {str(e)}"
+        )
+
+@app.post("/api/chat/sessions")
+async def create_chat_session(request: Request, session_data: dict):
+    """Создает новую сессию чата"""
+    try:
+        user_info = await get_current_user_info(request)
+        user_id = user_info['id']
+        
+        session_name = session_data.get('session_name', f"Сессия {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        
+        chat_session = chat_service.create_chat_session(user_id, session_name)
+        
+        return {
+            "success": True,
+            "session_id": chat_session.id,
+            "session_name": chat_session.session_name,
+            "created_at": chat_session.created_at.isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания сессии чата: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка создания сессии чата: {str(e)}"
+        )
+
+@app.get("/api/chat/sessions/{session_id}/messages")
+async def get_session_messages(session_id: int, request: Request):
+    """Получает сообщения сессии чата"""
+    try:
+        user_info = await get_current_user_info(request)
+        user_id = user_info['id']
+        
+        # Проверяем, что сессия принадлежит пользователю
+        session = chat_service.get_session_by_id(session_id)
+        if not session or session.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Сессия не найдена"
+            )
+        
+        messages = chat_service.get_session_messages(session_id, limit=100)
+        
+        return {
+            "success": True,
+            "messages": messages
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения сообщений сессии: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка получения сообщений сессии: {str(e)}"
+        )
+
+@app.post("/api/chat/messages")
+async def add_chat_message(request: Request, message_data: dict):
+    """Добавляет сообщение в сессию чата"""
+    try:
+        user_info = await get_current_user_info(request)
+        user_id = user_info['id']
+        
+        session_id = message_data.get('session_id')
+        message_type = message_data.get('message_type', 'user')
+        content = message_data.get('content', '')
+        
+        if not session_id or not content:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Необходимы session_id и content"
+            )
+        
+        # Проверяем, что сессия принадлежит пользователю
+        session = chat_service.get_session_by_id(session_id)
+        if not session or session.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Сессия не найдена"
+            )
+        
+        message_data = chat_service.add_message(
+            session_id, 
+            user_id, 
+            message_type, 
+            content,
+            {'session_id': session_id}
+        )
+        
+        return {
+            "success": True,
+            "message_id": message_data['id'],
+            "message": message_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Ошибка добавления сообщения: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка добавления сообщения: {str(e)}"
+        )
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ

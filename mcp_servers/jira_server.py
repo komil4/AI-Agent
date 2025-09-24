@@ -632,6 +632,62 @@ class JiraMCPServer(BaseMCPServer):
     def _get_tools(self) -> List[Dict[str, Any]]:
         """Возвращает список инструментов Jira сервера"""
         return self.tools
+    
+    def _call_tool_impl(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Реализация вызова конкретного инструмента Jira сервера"""
+        try:
+            if tool_name == "create_issue":
+                return self.create_issue(
+                    arguments.get('summary', ''),
+                    arguments.get('description', ''),
+                    arguments.get('issue_type', 'Task'),
+                    arguments.get('project_key', ''),
+                    arguments.get('assignee'),
+                    arguments.get('priority', 'Medium'),
+                    arguments.get('labels', [])
+                )
+            elif tool_name == "search_issues":
+                return self.search_issues(
+                    arguments.get('jql', ''),
+                    arguments.get('max_results', 50),
+                    arguments.get('fields')
+                )
+            elif tool_name == "get_issue_details":
+                return self.get_issue_details(
+                    arguments.get('issue_key', ''),
+                    arguments.get('fields')
+                )
+            elif tool_name == "update_issue":
+                return self.update_issue(
+                    arguments.get('issue_key', ''),
+                    arguments.get('summary'),
+                    arguments.get('description'),
+                    arguments.get('assignee'),
+                    arguments.get('priority'),
+                    arguments.get('labels')
+                )
+            elif tool_name == "add_comment":
+                return self.add_comment(
+                    arguments.get('issue_key', ''),
+                    arguments.get('comment', '')
+                )
+            elif tool_name == "list_projects":
+                return self.list_projects(
+                    arguments.get('project_type'),
+                    arguments.get('category_id')
+                )
+            elif tool_name == "transition_issue":
+                return self.transition_issue(
+                    arguments.get('issue_key', ''),
+                    arguments.get('transition_id', ''),
+                    arguments.get('comment')
+                )
+            else:
+                return format_tool_response(False, f"Неизвестный инструмент: {tool_name}")
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка выполнения инструмента {tool_name}: {e}")
+            return format_tool_response(False, f"Ошибка выполнения: {str(e)}")
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ

@@ -186,6 +186,12 @@ class ChatService:
             
             return result
     
+    def get_session_by_id(self, session_id: int) -> Optional[ChatSession]:
+        """Получает сессию чата по ID"""
+        with get_db() as session:
+            chat_session = session.query(ChatSession).filter(ChatSession.id == session_id).first()
+            return chat_session
+    
     def close_session(self, session_id: int):
         """Закрывает сессию чата"""
         with get_db() as session:

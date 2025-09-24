@@ -932,6 +932,67 @@ class LDAPMCPServer(BaseMCPServer):
     def _get_tools(self) -> List[Dict[str, Any]]:
         """Возвращает список инструментов LDAP сервера"""
         return self.tools
+    
+    def _call_tool_impl(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Реализация вызова конкретного инструмента LDAP сервера"""
+        try:
+            if tool_name == "search_users":
+                return self.search_users(
+                    arguments.get('query', ''),
+                    arguments.get('search_base'),
+                    arguments.get('attributes')
+                )
+            elif tool_name == "get_user_details":
+                return self.get_user_details(
+                    arguments.get('username', ''),
+                    arguments.get('attributes')
+                )
+            elif tool_name == "list_users":
+                return self.list_users(
+                    arguments.get('search_base'),
+                    arguments.get('limit', 50),
+                    arguments.get('attributes')
+                )
+            elif tool_name == "search_groups":
+                return self.search_groups(
+                    arguments.get('query', ''),
+                    arguments.get('search_base'),
+                    arguments.get('attributes')
+                )
+            elif tool_name == "get_group_details":
+                return self.get_group_details(
+                    arguments.get('group_name', ''),
+                    arguments.get('attributes')
+                )
+            elif tool_name == "list_groups":
+                return self.list_groups(
+                    arguments.get('search_base'),
+                    arguments.get('limit', 50),
+                    arguments.get('attributes')
+                )
+            elif tool_name == "get_user_groups":
+                return self.get_user_groups(
+                    arguments.get('username', ''),
+                    arguments.get('attributes')
+                )
+            elif tool_name == "get_group_members":
+                return self.get_group_members(
+                    arguments.get('group_name', ''),
+                    arguments.get('attributes')
+                )
+            elif tool_name == "authenticate_user":
+                return self.authenticate_user(
+                    arguments.get('username', ''),
+                    arguments.get('password', '')
+                )
+            elif tool_name == "get_ldap_info":
+                return self.get_ldap_info()
+            else:
+                return format_tool_response(False, f"Неизвестный инструмент: {tool_name}")
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка выполнения инструмента {tool_name}: {e}")
+            return format_tool_response(False, f"Ошибка выполнения: {str(e)}")
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ

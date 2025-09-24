@@ -376,6 +376,35 @@ class MCPClient:
             
             return {"error": f"Ошибка вызова инструмента: {str(e)}"}
     
+    async def call_tool(self, server_name: str, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Вызывает инструмент на внешнем MCP сервере"""
+        try:
+            # Проверяем, что сервер подключен
+            if server_name not in self.sessions:
+                return {"error": f"Сервер {server_name} не подключен"}
+            
+            # Получаем сессию и инструменты
+            session = self.sessions[server_name]
+            tools = self.available_tools.get(server_name, [])
+            
+            # Ищем нужный инструмент
+            tool_found = None
+            for tool in tools:
+                if tool.get('name') == tool_name:
+                    tool_found = tool
+                    break
+            
+            if not tool_found:
+                return {"error": f"Инструмент {tool_name} не найден на сервере {server_name}"}
+            
+            # Вызываем инструмент через внешний MCP сервер
+            result = await session.call_tool(tool_name, arguments)
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка вызова инструмента {tool_name} на внешнем сервере {server_name}: {e}")
+            return {"error": f"Ошибка вызова инструмента: {str(e)}"}
+    
     async def close_all_sessions(self):
         """Закрывает все MCP сессии"""
         for server_name, session in self.sessions.items():

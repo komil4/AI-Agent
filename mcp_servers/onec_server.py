@@ -882,6 +882,87 @@ class OneCMCPServer(BaseMCPServer):
     def _get_tools(self) -> List[Dict[str, Any]]:
         """Возвращает список инструментов 1C сервера"""
         return self.tools
+    
+    def _call_tool_impl(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Реализация вызова конкретного инструмента 1C сервера"""
+        try:
+            if tool_name == "get_user_tasks":
+                return self.get_user_tasks(
+                    arguments.get('username', ''),
+                    arguments.get('status'),
+                    arguments.get('project_id'),
+                    arguments.get('limit', 50),
+                    arguments.get('offset', 0)
+                )
+            elif tool_name == "get_task_info":
+                return self.get_task_info(
+                    arguments.get('task_id', ''),
+                    arguments.get('include_comments', False)
+                )
+            elif tool_name == "create_task":
+                return self.create_task(
+                    arguments.get('title', ''),
+                    arguments.get('description', ''),
+                    arguments.get('project_id', ''),
+                    arguments.get('assignee'),
+                    arguments.get('priority', 'Medium'),
+                    arguments.get('due_date'),
+                    arguments.get('tags', [])
+                )
+            elif tool_name == "update_task":
+                return self.update_task(
+                    arguments.get('task_id', ''),
+                    arguments.get('title'),
+                    arguments.get('description'),
+                    arguments.get('status'),
+                    arguments.get('assignee'),
+                    arguments.get('priority'),
+                    arguments.get('due_date'),
+                    arguments.get('tags')
+                )
+            elif tool_name == "add_task_comment":
+                return self.add_task_comment(
+                    arguments.get('task_id', ''),
+                    arguments.get('comment', '')
+                )
+            elif tool_name == "list_projects":
+                return self.list_projects(
+                    arguments.get('status'),
+                    arguments.get('limit', 50),
+                    arguments.get('offset', 0)
+                )
+            elif tool_name == "get_project_info":
+                return self.get_project_info(
+                    arguments.get('project_id', ''),
+                    arguments.get('include_tasks', False)
+                )
+            elif tool_name == "list_users":
+                return self.list_users(
+                    arguments.get('role'),
+                    arguments.get('active_only', True),
+                    arguments.get('limit', 50),
+                    arguments.get('offset', 0)
+                )
+            elif tool_name == "get_user_info":
+                return self.get_user_info(
+                    arguments.get('username', ''),
+                    arguments.get('include_tasks', False)
+                )
+            elif tool_name == "search_tasks":
+                return self.search_tasks(
+                    arguments.get('query', ''),
+                    arguments.get('project_id'),
+                    arguments.get('status'),
+                    arguments.get('assignee'),
+                    arguments.get('limit', 50),
+                    arguments.get('offset', 0)
+                )
+            else:
+                return format_tool_response(False, f"Неизвестный инструмент: {tool_name}")
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка выполнения инструмента {tool_name}: {e}")
+            return format_tool_response(False, f"Ошибка выполнения: {str(e)}")
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ

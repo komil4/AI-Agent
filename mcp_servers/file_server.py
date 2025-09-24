@@ -92,7 +92,7 @@ class FileMCPServer(BaseMCPServer):
         self.config_manager = ConfigManager()
         self.base_path = self.config_manager.get_service_config('file').get('base_path', '/tmp')
     
-    def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    def _call_tool_impl(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Вызывает инструмент сервера"""
         try:
             if tool_name == "read_file":

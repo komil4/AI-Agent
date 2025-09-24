@@ -826,6 +826,76 @@ class AtlassianMCPServer(BaseMCPServer):
     def _get_tools(self) -> List[Dict[str, Any]]:
         """Возвращает список инструментов Atlassian сервера"""
         return self.tools
+    
+    def _call_tool_impl(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Реализация вызова конкретного инструмента Atlassian сервера"""
+        try:
+            if tool_name == "search_pages":
+                return self.search_pages(
+                    arguments.get('query', ''),
+                    arguments.get('space_key'),
+                    arguments.get('type'),
+                    arguments.get('limit', 20),
+                    arguments.get('start', 0)
+                )
+            elif tool_name == "create_page":
+                return self.create_page(
+                    arguments.get('title', ''),
+                    arguments.get('content', ''),
+                    arguments.get('space_key', ''),
+                    arguments.get('parent_id'),
+                    arguments.get('type', 'page')
+                )
+            elif tool_name == "list_pages":
+                return self.list_pages(
+                    arguments.get('space_key'),
+                    arguments.get('type'),
+                    arguments.get('limit', 20),
+                    arguments.get('start', 0)
+                )
+            elif tool_name == "get_page_content":
+                return self.get_page_content(
+                    arguments.get('page_id', ''),
+                    arguments.get('version'),
+                    arguments.get('expand')
+                )
+            elif tool_name == "update_page":
+                return self.update_page(
+                    arguments.get('page_id', ''),
+                    arguments.get('title'),
+                    arguments.get('content'),
+                    arguments.get('version'),
+                    arguments.get('minor_edit', False)
+                )
+            elif tool_name == "list_spaces":
+                return self.list_spaces(
+                    arguments.get('type'),
+                    arguments.get('status'),
+                    arguments.get('limit', 20),
+                    arguments.get('start', 0)
+                )
+            elif tool_name == "add_comment":
+                return self.add_comment(
+                    arguments.get('page_id', ''),
+                    arguments.get('comment', ''),
+                    arguments.get('parent_id')
+                )
+            elif tool_name == "get_page_history":
+                return self.get_page_history(
+                    arguments.get('page_id', ''),
+                    arguments.get('limit', 20),
+                    arguments.get('start', 0)
+                )
+            elif tool_name == "delete_page":
+                return self.delete_page(
+                    arguments.get('page_id', '')
+                )
+            else:
+                return format_tool_response(False, f"Неизвестный инструмент: {tool_name}")
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка выполнения инструмента {tool_name}: {e}")
+            return format_tool_response(False, f"Ошибка выполнения: {str(e)}")
 
 # ============================================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
