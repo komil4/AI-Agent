@@ -194,29 +194,57 @@ class IntelligentToolProcessor:
                     parameters = extracted_data.get('parameters', {})
                     found_tools = extracted_data.get('found_tools', [])
                     
-                    logger.info(f"🔍 Найденные параметры: {list(parameters.keys())}")
+                    logger.info(f"🔍 Найденные параметры: {list(parameters.keys()) if isinstance(parameters, dict) else parameters}")
                     logger.info(f"🛠️ Подходящие инструменты: {found_tools}")
-                    
+
+                    # Получаем все допустимые параметры из всех инструментов
+                    all_valid_params = set()
+                    tool_param_map = {}
+                    for tool in available_tools:
+                        tool_name = tool.get('name', '')
+                        tool_params = tool.get('inputSchema', {}).get('properties', {}).get('required', [])
+                        all_valid_params.update(tool_params)
+                        tool_param_map[tool_name] = set(tool_params)
+
+                    # Проверяем вложенность структуры параметров
                     if isinstance(parameters, dict):
-                        # Получаем все допустимые параметры из всех инструментов
-                        all_valid_params = set()
-                        for tool in available_tools:
-                            tool_params = tool.get('inputSchema', {}).get('properties', {}).get('required', [])
-                            all_valid_params.update(tool_params)
-                        
-                        # Обрабатываем найденные параметры
-                        for param_name, param_value in parameters.items():
-                            # Проверяем, что параметр существует в каком-либо инструменте
-                            if param_name in all_valid_params:
-                                context_params.append(ContextParameter(
-                                    name=param_name,
-                                    value=str(param_value),
-                                    source='llm_extraction',
-                                    confidence=0.9
-                                ))
-                                logger.info(f"✅ Параметр '{param_name}' = '{param_value}' добавлен")
-                            else:
-                                logger.warning(f"⚠️ LLM выдумал параметр '{param_name}' - не найден в инструментах")
+                        # Если структура: {param: value, ...} (старый формат)
+                        # или структура: {tool_name: {param: value, ...}, ...} (новый вложенный формат)
+                        is_nested = False
+                        # Проверяем, если ключи parameters совпадают с именами инструментов
+                        if all(isinstance(k, str) and k in tool_param_map for k in parameters.keys()):
+                            # Проверяем, что значения - dict (т.е. вложенная структура)
+                            if all(isinstance(v, dict) for v in parameters.values()):
+                                is_nested = True
+
+                        if is_nested:
+                            # Новый вложенный формат: {tool_name: {param: value, ...}, ...}
+                            for tool_name, param_dict in parameters.items():
+                                valid_params = tool_param_map.get(tool_name, set())
+                                for param_name, param_value in param_dict.items():
+                                    if param_name in valid_params:
+                                        context_params.append(ContextParameter(
+                                            name=param_name,
+                                            value=str(param_value),
+                                            source='llm_extraction',
+                                            confidence=0.9
+                                        ))
+                                        logger.info(f"✅ [{tool_name}] Параметр '{param_name}' = '{param_value}' добавлен")
+                                    else:
+                                        logger.warning(f"⚠️ [{tool_name}] LLM выдумал параметр '{param_name}' - не найден в инструменте")
+                        else:
+                            # Старый формат: {param: value, ...}
+                            for param_name, param_value in parameters.items():
+                                if param_name in all_valid_params:
+                                    context_params.append(ContextParameter(
+                                        name=param_name,
+                                        value=str(param_value),
+                                        source='llm_extraction',
+                                        confidence=0.9
+                                    ))
+                                    logger.info(f"✅ Параметр '{param_name}' = '{param_value}' добавлен")
+                                else:
+                                    logger.warning(f"⚠️ LLM выдумал параметр '{param_name}' - не найден в инструментах")
                     else:
                         logger.warning("⚠️ Неожиданный формат parameters: %s", type(parameters))
                 else:
