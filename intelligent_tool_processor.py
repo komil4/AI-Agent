@@ -124,13 +124,20 @@ class IntelligentToolProcessor:
                 full_context += f" {user_context['user_additional_context']}"
             
             # Формируем системное сообщение с информацией об инструментах
-            # Группируем инструменты по серверам
+            # Группируем инструменты по серверам с улучшенным форматом
             from collections import defaultdict
 
             tools_by_server = defaultdict(list)
             for tool in available_tools:
                 server = tool.get('server', 'Без сервера')
-                tool_info = f"- {tool.get('name', '')} - {tool.get('description', '')} - Параметры: {tool.get('inputSchema', {}).get('properties', {}).get('required', [])}"
+                tool_name = tool.get('name', '')
+                tool_description = tool.get('description', '')
+                required_params = tool.get('inputSchema', {}).get('properties', {}).get('required', [])
+                
+                # Формируем список параметров в читаемом виде
+                params_list = ', '.join(required_params) if required_params else 'нет обязательных параметров'
+                
+                tool_info = f"- {tool_name}\n  - описание: {tool_description}\n  - параметры: {params_list}"
                 tools_by_server[server].append(tool_info)
 
             grouped_tools_info = ""
@@ -138,29 +145,37 @@ class IntelligentToolProcessor:
                 grouped_tools_info += f"\n### {server} Tools\n"
                 grouped_tools_info += "\n".join(tools) + "\n"
 
-            system_message = f"""You are an AI assistant for system integrations. Your task: analyze user requests, select appropriate tools, and extract parameters.
+            system_message = f"""Ты - AI ассистент для системных интеграций. Твоя задача: анализировать запросы пользователей, выбирать подходящие инструменты и извлекать параметры.
 
-INSTRUCTIONS:
-1. Analyze the current request and chat history
-2. Select the most suitable tool from the list below
-3. Extract all relevant parameters
+СТРОГИЕ ИНСТРУКЦИИ:
+1. Анализируй текущий запрос и историю чата
+2. Выбери ТОЛЬКО ОДИН наиболее подходящий инструмент из списка ниже
+3. Извлеки ВСЕ необходимые параметры для выбранного инструмента
+4. НЕ ВЫДУМЫВАЙ параметры - используй только те, что есть в списке инструментов
+5. НЕ СОЗДАВАЙ новые названия параметров
+6. Если параметр не найден в контексте, НЕ добавляй его в ответ
 
-IMPORTANT Respond ONLY in JSON format without additional info!
+ВАЖНО: Отвечай ТОЛЬКО в формате JSON без дополнительной информации!
 
-AVAILABLE TOOLS:
+ДОСТУПНЫЕ ИНСТРУМЕНТЫ:
 {grouped_tools_info}
 
-RESPONSE FORMAT:
+ФОРМАТ ОТВЕТА (строго соблюдай):
 {{
-    "tool": "tool_name",
+    "tool": "точное_имя_инструмента",
     "parameters": {{
-        "param1": "value1",
-        "param2": "value2"
+        "имя_параметра": "значение_из_контекста"
     }},
-    "reasoning": "brief explanation"
+    "reasoning": "краткое объяснение выбора"
 }}
 
-CHAT HISTORY: {full_context}"""
+ПРАВИЛА ДЛЯ ПАРАМЕТРОВ:
+- Используй ТОЛЬКО параметры из списка "параметры" для каждого инструмента
+- Если параметр не найден в контексте, НЕ включай его в ответ
+- НЕ добавляй параметры, которых нет в списке инструмента
+- Значения параметров должны быть извлечены из контекста или сообщения пользователя
+
+КОНТЕКСТ ЧАТА: {full_context}"""
 
             messages = [
                 {"role": "system", "content": system_message},
@@ -169,7 +184,7 @@ CHAT HISTORY: {full_context}"""
             
             response = await self.llm_client.llm_provider.generate_response(messages)
             
-            # Парсим ответ с улучшенной обработкой для Llama 3.1:8b
+            # Парсим ответ с улучшенной обработкой для Gemma3:12b
             try:
                 # Очищаем ответ от возможных лишних символов
                 cleaned_response = response.strip()
@@ -182,17 +197,41 @@ CHAT HISTORY: {full_context}"""
                     json_str = cleaned_response[json_start:json_end]
                     extracted_data = json.loads(json_str)
                     
+                    # Проверяем, что выбранный инструмент существует
+                    selected_tool_name = extracted_data.get('tool', '')
+                    tool_exists = any(tool.get('name') == selected_tool_name for tool in available_tools)
+                    
+                    if not tool_exists:
+                        logger.warning(f"⚠️ LLM выбрал несуществующий инструмент: {selected_tool_name}")
+                        # Попробуем найти похожий инструмент
+                        for tool in available_tools:
+                            if selected_tool_name.lower() in tool.get('name', '').lower():
+                                selected_tool_name = tool.get('name')
+                                logger.info(f"✅ Найден похожий инструмент: {selected_tool_name}")
+                                break
+                    
                     # Обрабатываем параметры
                     parameters = extracted_data.get('parameters', {})
                     if isinstance(parameters, dict):
+                        # Получаем список допустимых параметров для выбранного инструмента
+                        valid_params = []
+                        for tool in available_tools:
+                            if tool.get('name') == selected_tool_name:
+                                valid_params = tool.get('inputSchema', {}).get('properties', {}).get('required', [])
+                                break
+                        
                         # Ожидаем, что parameters - это словарь ключ: значение
                         for param_name, param_value in parameters.items():
-                            context_params.append(ContextParameter(
-                                name=param_name,
-                                value=str(param_value),
-                                source='llm_extraction',
-                                confidence=0.7
-                            ))
+                            # Проверяем, что параметр существует в инструменте
+                            if param_name in valid_params:
+                                context_params.append(ContextParameter(
+                                    name=param_name,
+                                    value=str(param_value),
+                                    source='llm_extraction',
+                                    confidence=0.8
+                                ))
+                            else:
+                                logger.warning(f"⚠️ LLM выдумал параметр '{param_name}' для инструмента '{selected_tool_name}'")
                     elif isinstance(parameters, list):
                         # Если вдруг parameters - это список, пробуем обработать каждый элемент
                         for param_data in parameters:
@@ -215,11 +254,11 @@ CHAT HISTORY: {full_context}"""
                     else:
                         logger.warning("⚠️ Неожиданный формат parameters: %s", type(parameters))
                 else:
-                    logger.warning("⚠️ JSON не найден в ответе Llama")
+                    logger.warning("⚠️ JSON не найден в ответе Gemma3:12b")
                     
             except json.JSONDecodeError as e:
-                logger.warning(f"⚠️ Не удалось распарсить извлеченные параметры: {e}")
-                logger.debug(f"Ответ Llama: {response}")
+                logger.warning(f"⚠️ Не удалось распарсить извлеченные параметры от Gemma3:12b: {e}")
+                logger.debug(f"Ответ Gemma3:12b: {response}")
                 
                 # Попытка извлечь параметры из текстового ответа
                 if 'tool' in response.lower() or 'parameter' in response.lower():
