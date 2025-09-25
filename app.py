@@ -411,7 +411,8 @@ async def chat(chat_message: ChatMessage, request: Request):
             'session_id': active_session.id,
             'chat_history': session_history,
             'user_additional_context': user_additional_context or "",
-            'use_react': use_react
+            'use_react': use_react,
+            'use_intelligent_tools': True  # Включаем интеллектуальную обработку по умолчанию
         }
         
         # Определяем команду и вызываем соответствующий MCP сервер

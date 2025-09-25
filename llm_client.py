@@ -131,6 +131,40 @@ class LLMClient:
             user_context = tools_context.get('user_context', {})
             chat_history = tools_context.get('chat_history', [])
             
+            # Проверяем, нужно ли использовать интеллектуальную обработку
+            use_intelligent = user_context.get('use_intelligent_tools', True)
+            
+            if use_intelligent:
+                # Используем интеллектуальный процессор инструментов
+                from intelligent_tool_processor import IntelligentToolProcessor
+                from mcp_client import mcp_client
+                
+                intelligent_processor = IntelligentToolProcessor(self, mcp_client)
+                return await intelligent_processor.process_with_intelligent_tools(tools_context)
+            else:
+                # Используем старую логику
+                return await self._process_with_legacy_tools(tools_context)
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка обработки с инструментами: {e}")
+            return f"Извините, произошла ошибка при обработке вашего запроса: {str(e)}"
+    
+    async def _process_with_legacy_tools(self, tools_context: Dict[str, Any]) -> str:
+        """
+        Обрабатывает запрос с использованием старой логики инструментов
+        
+        Args:
+            tools_context: Контекст с инструментами и сообщением
+            
+        Returns:
+            Результат обработки
+        """
+        try:
+            available_tools = tools_context.get('available_tools', [])
+            user_message = tools_context.get('user_message', '')
+            user_context = tools_context.get('user_context', {})
+            chat_history = tools_context.get('chat_history', [])
+            
             # Формируем сообщения для LLM с учетом истории чата
             messages = self._format_messages_with_tools(user_message, available_tools, user_context, chat_history)
             
