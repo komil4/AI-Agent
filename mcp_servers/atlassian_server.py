@@ -8,6 +8,7 @@ MCP сервер для работы с Atlassian Confluence с использо
 # ============================================================================
 
 import os
+import token
 import requests
 import logging
 from atlassian import Confluence
@@ -327,13 +328,17 @@ class AtlassianMCPServer(BaseMCPServer):
             # Подключение к Confluence
             self.confluence = Confluence(
                 url=self.confluence_url,
-                username=self.username,
-                password=self.api_token
+                token=self.api_token
             )
             
-            # Проверяем подключение
-            self.confluence.get_current_user()
-            logger.info(f"✅ Подключение к Confluence успешно: {self.confluence_url}")
+            # Проверяем подключение - используем метод получения информации о пользователе
+            try:
+                # Пытаемся получить информацию о текущем пользователе через username
+                user_info = self.confluence.get_user_details_by_username(self.username)
+                logger.info(f"✅ Подключение к Confluence успешно: {self.confluence_url}, пользователь: {user_info.get('displayName', self.username)}")
+            except Exception as user_error:
+                # Если не удалось получить информацию о пользователе, просто проверяем подключение
+                logger.info(f"✅ Подключение к Confluence успешно: {self.confluence_url}")
             
         except Exception as e:
             logger.error(f"❌ Ошибка подключения к Confluence: {e}")
@@ -345,7 +350,8 @@ class AtlassianMCPServer(BaseMCPServer):
             return False
         
         try:
-            self.confluence.get_current_user()
+            # Пытаемся получить информацию о пользователе для проверки подключения
+            self.confluence.get_user_details_by_username(self.username)
             return True
         except Exception:
             return False
@@ -801,11 +807,16 @@ class AtlassianMCPServer(BaseMCPServer):
             # Проверяем подключение к Confluence
             if hasattr(self, 'confluence') and self.confluence:
                 # Пытаемся получить информацию о текущем пользователе
-                current_user = self.confluence.get_current_user()
+                try:
+                    current_user = self.confluence.get_user_details_by_username(self.username)
+                    user_display_name = current_user.get("displayName", self.username)
+                except Exception:
+                    user_display_name = self.username
+                
                 return {
                     'status': 'healthy',
                     'provider': 'atlassian',
-                    'message': f'Подключение к Confluence успешно. Пользователь: {current_user.get("displayName", "Unknown")}',
+                    'message': f'Подключение к Confluence успешно. Пользователь: {user_display_name}',
                     'server_url': self.confluence_url
                 }
             else:

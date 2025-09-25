@@ -8,21 +8,22 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         :root {
-            --primary-dark: #1a1612;
-            --primary-medium: #2d241f;
-            --primary-light: #3d332c;
-            --accent-color: #d4a574;
-            --text-light: #f5f1eb;
-            --text-dark: #a0958a;
-            --text-primary: #f5f1eb;
-            --bg-light: #1a1612;
-            --bg-medium: #2d241f;
-            --bg-card: #3d332c;
-            --border-color: #4a4038;
-            --success-color: #8fbc8f;
-            --warning-color: #daa520;
-            --danger-color: #cd853f;
-            --info-color: #d4a574;
+            --primary-dark: #0d0d0d;
+            --primary-medium: #1a1a1a;
+            --primary-light: #262626;
+            --accent-color: #8b7355;
+            --text-light: #e8e8e8;
+            --text-dark: #888888;
+            --text-primary: #e8e8e8;
+            --bg-light: #0d0d0d;
+            --bg-medium: #1a1a1a;
+            --bg-card: #262626;
+            --border-color: #333333;
+            --success-color: #6b8e6b;
+            --warning-color: #b8860b;
+            --danger-color: #8b4513;
+            --info-color: #8b7355;
+            --shadow-color: rgba(0, 0, 0, 0.5);
         }
         
         body {
@@ -36,10 +37,11 @@
         .login-container {
             background: var(--bg-card);
             border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 20px 40px var(--shadow-color);
             overflow: hidden;
             backdrop-filter: blur(10px);
             border: 1px solid var(--border-color);
+            opacity: 0.95;
         }
         
         .login-header {

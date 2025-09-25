@@ -270,7 +270,7 @@ class JiraMCPServer(BaseMCPServer):
             # Подключение к Jira
             self.jira = JIRA(
                 server=self.jira_url,
-                basic_auth=(self.username, self.api_token)
+                token_auth=self.api_token
             )
             
             # Проверяем подключение

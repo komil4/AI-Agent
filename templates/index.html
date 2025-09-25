@@ -561,10 +561,47 @@
         ::-webkit-scrollbar-thumb {
             background: var(--accent-color);
             border-radius: 4px;
+            opacity: 0.7;
         }
         
         ::-webkit-scrollbar-thumb:hover {
             background: var(--text-dark);
+            opacity: 0.9;
+        }
+        
+        /* Дополнительные стили для приглушенного вида */
+        .text-muted {
+            opacity: 0.7;
+        }
+        
+        .small {
+            opacity: 0.8;
+        }
+        
+        /* Стили для заголовков */
+        h1, h2, h3, h4, h5, h6 {
+            opacity: 0.9;
+        }
+        
+        /* Стили для ссылок */
+        a {
+            opacity: 0.8;
+            transition: opacity 0.3s ease;
+        }
+        
+        a:hover {
+            opacity: 1;
+        }
+        
+        /* Стили для иконок */
+        .fas, .far, .fab {
+            opacity: 0.85;
+        }
+        
+        /* Стили для разделителей */
+        hr {
+            border-color: var(--border-color);
+            opacity: 0.6;
         }
         
         /* Стили для контейнера популярных команд */
@@ -572,6 +609,7 @@
             max-height: 300px;
             overflow-y: auto;
             padding-right: 8px;
+            opacity: 0.9;
         }
         
         /* Стили для ссылок в сообщениях чата */
@@ -580,6 +618,7 @@
             text-decoration: underline !important;
             font-weight: 600;
             transition: all 0.3s ease;
+            opacity: 0.8;
         }
         
         .message a:hover {
@@ -589,10 +628,12 @@
             padding: 2px 6px;
             border-radius: 6px;
             transform: translateY(-1px);
+            opacity: 1;
         }
         
         .message a:visited {
             color: var(--text-dark) !important;
+            opacity: 0.6;
         }
         
         /* Специальные стили для ссылок в чате */
@@ -603,6 +644,7 @@
             transition: all 0.3s ease;
             border-radius: 6px;
             padding: 2px 4px;
+            opacity: 0.8;
         }
         
         .chat-link:hover {
@@ -610,12 +652,14 @@
             text-decoration: none !important;
             background: var(--accent-color);
             transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 8px var(--shadow-color);
+            opacity: 1;
         }
         
         .chat-link:active {
             transform: translateY(0);
-            box-shadow: 0 2px 4px rgba(41, 120, 160, 0.3);
+            box-shadow: 0 2px 4px var(--shadow-color);
+            opacity: 0.9;
         }
         
         /* Стили для разных типов ссылок */
@@ -624,11 +668,13 @@
             background: linear-gradient(135deg, rgba(41, 120, 160, 0.1) 0%, rgba(11, 79, 108, 0.1) 100%);
             border-radius: 4px;
             padding: 2px 4px;
+            opacity: 0.8;
         }
         
         .jira-link:hover {
             background: linear-gradient(135deg, rgba(41, 120, 160, 0.2) 0%, rgba(11, 79, 108, 0.2) 100%);
             color: var(--primary-dark) !important;
+            opacity: 1;
         }
         
         .git-link {
@@ -636,11 +682,13 @@
             background: linear-gradient(135deg, rgba(11, 79, 108, 0.1) 0%, rgba(18, 44, 52, 0.1) 100%);
             border-radius: 4px;
             padding: 2px 4px;
+            opacity: 0.8;
         }
         
         .git-link:hover {
             background: linear-gradient(135deg, rgba(11, 79, 108, 0.2) 0%, rgba(18, 44, 52, 0.2) 100%);
             color: var(--primary-dark) !important;
+            opacity: 1;
         }
         
         .confluence-link {
@@ -648,11 +696,13 @@
             background: linear-gradient(135deg, rgba(18, 44, 52, 0.1) 0%, rgba(11, 79, 108, 0.1) 100%);
             border-radius: 4px;
             padding: 2px 4px;
+            opacity: 0.8;
         }
         
         .confluence-link:hover {
             background: linear-gradient(135deg, rgba(18, 44, 52, 0.2) 0%, rgba(11, 79, 108, 0.2) 100%);
             color: var(--primary-light) !important;
+            opacity: 1;
         }
     </style>
 </head>
