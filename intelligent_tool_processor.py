@@ -384,6 +384,19 @@ RESPONSE FORMAT:
             except json.JSONDecodeError as e:
                 logger.warning(f"⚠️ Не удалось распарсить выбор инструмента: {e}")
                 logger.debug(f"Ответ Llama: {response}")
+                
+                # Попытка извлечь название инструмента из текстового ответа
+                if 'tool' in response.lower():
+                    lines = response.split('\n')
+                    for line in lines:
+                        if 'tool' in line.lower() and ':' in line:
+                            tool_name = line.split(':', 1)[1].strip().strip('"\'')
+                            # Находим инструмент по названию
+                            for tool in available_tools:
+                                if tool.get('name') == tool_name:
+                                    logger.info(f"✅ Выбран инструмент из текста: {tool_name}")
+                                    return tool
+                
                 return None
                 
         except Exception as e:
