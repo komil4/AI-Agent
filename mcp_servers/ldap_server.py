@@ -317,85 +317,6 @@ class LDAPMCPServer(BaseMCPServer):
             )
         ]
     
-    def _get_description(self) -> str:
-        """Возвращает описание сервера"""
-        return "ldap: Поиск пользователей и групп в LDAP/Active Directory. Инструменты: search_users, get_user_details, list_users, search_groups, get_group_details, list_groups, get_user_groups, get_group_members, authenticate_user, get_ldap_info"
-    
-    def _load_config(self):
-        """Загружает конфигурацию LDAP"""
-        ad_config = self.config_manager.get_service_config('active_directory')
-        self.ldap_url = ad_config.get('server', '')
-        self.ldap_user = ad_config.get('service_user', '')
-        self.ldap_password = ad_config.get('service_password', '')
-        self.base_dn = ad_config.get('base_dn', '')
-        self.domain = ad_config.get('domain', '')
-    
-    def _connect(self):
-        """Подключение к LDAP"""
-        try:
-            ad_config = self.config_manager.get_service_config('active_directory')
-            if not ad_config.get('enabled', False):
-                logger.info("ℹ️ Active Directory отключен в конфигурации")
-                return
-            
-            if not all([self.ldap_url, self.ldap_user, self.ldap_password, self.base_dn]):
-                logger.warning("⚠️ Неполная конфигурация LDAP")
-                return
-            
-            # Создаем подключение к LDAP
-            server = ldap3.Server(self.ldap_url)
-            # 1. Простая аутентификация с sAMAccountName
-            try:
-                user_dn = f"CN={self.ldap_user},{self.base_dn}"
-                connection = ldap3.Connection(server, user=user_dn, password=self.ldap_password)
-                self.connection = connection
-            except Exception as e:
-                logger.warning(f"DN аутентификация не удалась: {e}")
-            
-            # 2. Аутентификация с UPN (User Principal Name)
-            try:
-                user_dn = f"{self.ldap_user}@{self.domain}"
-                connection = ldap3.Connection(server, user=user_dn, password=self.ldap_password)
-                self.connection = connection    
-            except Exception as e:
-                logger.warning(f"UPN аутентификация не удалась: {e}")
-            
-            # 3. Аутентификация с sAMAccountName
-            try:
-                user_dn = f"{self.domain}\\{self.ldap_user}"
-                connection = ldap3.Connection(server, user=user_dn, password=self.ldap_password)
-                self.connection = connection
-            except Exception as e:
-                logger.warning(f"sAMAccountName аутентификация не удалась: {e}")
-            
-            # 4. Поиск пользователя и аутентификация по найденному DN
-            try:
-                user_dn = self._find_user_dn(server, self.ldap_user)
-                if user_dn:
-                    logger.info(f"Найден DN пользователя: {user_dn}")
-                    # Аутентифицируемся с найденным DN
-                    connection = ldap3.Connection(server, user=user_dn, password=self.ldap_password)
-                    self.connection = connection
-            except Exception as e:
-                logger.warning(f"sAMAccountName аутентификация не удалась: {e}")
-
-            logger.info(f"✅ Подключение к LDAP успешно: {self.ldap_url}")
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка подключения к LDAP: {e}")
-            self.connection = None
-    
-    def _test_connection(self) -> bool:
-        """Тестирует подключение к LDAP"""
-        if not self.connection:
-            return False
-        
-        try:
-            self.connection.bind()
-            return True
-        except Exception:
-            return False
-    
     # ============================================================================
     # ИНСТРУМЕНТЫ LDAP/ACTIVE DIRECTORY
     # ============================================================================
@@ -921,20 +842,13 @@ class LDAPMCPServer(BaseMCPServer):
                 }
             
             # Проверяем подключение к LDAP
-            if hasattr(self, 'server') and self.server:
-                # Пытаемся подключиться к LDAP серверу
-                from ldap3 import Connection, Server
-                
-                server = Server(self.server)
-                conn = Connection(server, auto_bind=True)
-                
-                if conn.bind():
-                    conn.unbind()
+            if hasattr(self, 'connection') and self.connection:
+                if self.connection.bind():
                     return {
                         'status': 'healthy',
                         'provider': 'ldap',
-                        'message': f'Подключение к LDAP успешно. Сервер: {self.server}',
-                        'server_url': self.server
+                        'message': f'Подключение к LDAP успешно. Сервер: {self.ldap_url}',
+                        'server_url': self.ldap_url
                     }
                 else:
                     return {
@@ -957,6 +871,93 @@ class LDAPMCPServer(BaseMCPServer):
                 'error': str(e)
             }
     
+    # ============================================================================
+    # СЛУЖЕБНЫЕ ФУНКЦИИ
+    # ============================================================================
+    
+    def _get_description(self) -> str:
+        """Возвращает описание сервера"""
+        return "ldap: Поиск пользователей и групп в LDAP/Active Directory. Инструменты: search_users, get_user_details, list_users, search_groups, get_group_details, list_groups, get_user_groups, get_group_members, authenticate_user, get_ldap_info"
+    
+    def _load_config(self):
+        """Загружает конфигурацию LDAP"""
+        ad_config = self.config_manager.get_service_config('active_directory')
+        self.ldap_url = ad_config.get('server', '')
+        self.ldap_user = ad_config.get('service_user', '')
+        self.ldap_password = ad_config.get('service_password', '')
+        self.base_dn = ad_config.get('base_dn', '')
+        self.domain = ad_config.get('domain', '')
+    
+    def _connect(self):
+        """Подключение к LDAP"""
+        try:
+            ad_config = self.config_manager.get_service_config('active_directory')
+            if not ad_config.get('enabled', False):
+                logger.info("ℹ️ Active Directory отключен в конфигурации")
+                return
+            
+            if not all([self.ldap_url, self.ldap_user, self.ldap_password, self.base_dn]):
+                logger.warning("⚠️ Неполная конфигурация LDAP")
+                return
+            
+            # Создаем подключение к LDAP
+            server = ldap3.Server(self.ldap_url)
+            # 1. Простая аутентификация с sAMAccountName
+            try:
+                user_dn = f"CN={self.ldap_user},{self.base_dn}"
+                connection = ldap3.Connection(server, user=user_dn, password=self.ldap_password)
+                if connection.bind():
+                    self.connection = connection
+            except Exception as e:
+                logger.warning(f"DN аутентификация не удалась: {e}")
+            
+            # 2. Аутентификация с UPN (User Principal Name)
+            try:
+                user_dn = f"{self.ldap_user}@{self.domain}"
+                connection = ldap3.Connection(server, user=user_dn, password=self.ldap_password)
+                if connection.bind():
+                    self.connection = connection    
+            except Exception as e:
+                logger.warning(f"UPN аутентификация не удалась: {e}")
+            
+            # 3. Аутентификация с sAMAccountName
+            try:
+                user_dn = f"{self.domain}\\{self.ldap_user}"
+                connection = ldap3.Connection(server, user=user_dn, password=self.ldap_password)
+                if connection.bind():
+                    self.connection = connection
+            except Exception as e:
+                logger.warning(f"sAMAccountName аутентификация не удалась: {e}")
+            
+            # 4. Поиск пользователя и аутентификация по найденному DN
+            try:
+                user_dn = self._find_user_dn(server, self.ldap_user)
+                if user_dn:
+                    logger.info(f"Найден DN пользователя: {user_dn}")
+                    # Аутентифицируемся с найденным DN
+                    connection = ldap3.Connection(server, user=user_dn, password=self.ldap_password)
+                    if connection.bind():
+                        self.connection = connection
+            except Exception as e:
+                logger.warning(f"sAMAccountName аутентификация не удалась: {e}")
+
+            logger.info(f"✅ Подключение к LDAP успешно: {self.ldap_url}")
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка подключения к LDAP: {e}")
+            self.connection = None
+    
+    def _test_connection(self) -> bool:
+        """Тестирует подключение к LDAP"""
+        if not self.connection:
+            return False
+        
+        try:
+            self.connection.bind()
+            return True
+        except Exception:
+            return False
+        
     def _get_tools(self) -> List[Dict[str, Any]]:
         """Возвращает список инструментов LDAP сервера"""
         return self.tools

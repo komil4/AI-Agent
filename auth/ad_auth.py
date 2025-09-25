@@ -234,13 +234,14 @@ class ADAuthenticator:
         Получает информацию о пользователе из Active Directory
         """
         try:
+            attributes=['sAMAccountName', 'displayName', 'mail', 'cn', 'givenName', 'sn', 'userPrincipalName']
             search_filter = f"(sAMAccountName={username})"
             # Пробуем анонимное подключение
             conn.search(
                 search_base=self.ad_base_dn,
                 search_filter=search_filter,
                 search_scope='SUBTREE',
-                attributes=['distinguishedName']
+                attributes = attributes
             )
                         
             if conn.entries:       
@@ -256,12 +257,22 @@ class ADAuthenticator:
                 # Определяем права администратора
                 is_admin = any('admin' in group.lower() for group in groups)
 
+                # Форматируем результаты
+                user_data = {}
+                for attr in attributes:
+                    if hasattr(entry, attr):
+                        value = getattr(entry, attr)
+                        if isinstance(value, list) and len(value) > 0:
+                            user_data[attr] = str(value[0])
+                        elif value:
+                            user_data[attr] = str(value)
+
                 if conn.entries:
                     entry = conn.entries[0]
                     user_info = {
-                        'username': str(entry.sAMAccountName),
-                        'display_name': str(entry.displayName) if entry.displayName else username,
-                        'email': str(entry.mail) if entry.mail else None,
+                        'username': str(user_data['sAMAccountName']),
+                        'display_name': str(user_data['displayName']) if user_data['displayName'] else username,
+                        'email': str(user_data['mail']) if user_data['mail'] else None,
                         'groups': groups,
                         'is_admin': is_admin
                     }
