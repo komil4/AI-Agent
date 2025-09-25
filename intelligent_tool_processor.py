@@ -182,26 +182,37 @@ CHAT HISTORY: {full_context}"""
                     extracted_data = json.loads(json_str)
                     
                     # Обрабатываем параметры
-                    parameters = extracted_data.get('parameters', [])
-                    if not parameters and 'tool' in extracted_data:
-                        # Если параметры в другом формате
-                        tool_params = extracted_data.get('parameters', {})
-                        if isinstance(tool_params, dict):
-                            for param_name, param_value in tool_params.items():
+                    parameters = extracted_data.get('parameters', {})
+                    if isinstance(parameters, dict):
+                        # Ожидаем, что parameters - это словарь ключ: значение
+                        for param_name, param_value in parameters.items():
+                            context_params.append(ContextParameter(
+                                name=param_name,
+                                value=str(param_value),
+                                source='llm_extraction',
+                                confidence=0.7
+                            ))
+                    elif isinstance(parameters, list):
+                        # Если вдруг parameters - это список, пробуем обработать каждый элемент
+                        for param_data in parameters:
+                            if isinstance(param_data, dict):
+                                # Старый формат: список словарей с ключами name/value/source/confidence
                                 context_params.append(ContextParameter(
-                                    name=param_name,
-                                    value=str(param_value),
+                                    name=param_data.get('name', ''),
+                                    value=param_data.get('value', ''),
+                                    source=param_data.get('source', 'current_message'),
+                                    confidence=param_data.get('confidence', 0.5)
+                                ))
+                            elif isinstance(param_data, str):
+                                # Если элемент - строка, добавляем как параметр с неизвестным именем
+                                context_params.append(ContextParameter(
+                                    name='param',
+                                    value=param_data,
                                     source='llm_extraction',
-                                    confidence=0.7
+                                    confidence=0.5
                                 ))
                     else:
-                        for param_data in parameters:
-                            context_params.append(ContextParameter(
-                                name=param_data.get('name', ''),
-                                value=param_data.get('value', ''),
-                                source=param_data.get('source', 'current_message'),
-                                confidence=param_data.get('confidence', 0.5)
-                            ))
+                        logger.warning("⚠️ Неожиданный формат parameters: %s", type(parameters))
                 else:
                     logger.warning("⚠️ JSON не найден в ответе Llama")
                     
