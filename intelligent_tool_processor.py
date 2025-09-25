@@ -138,29 +138,28 @@ class IntelligentToolProcessor:
                 grouped_tools_info += f"\n### {server} Tools\n"
                 grouped_tools_info += "\n".join(tools) + "\n"
 
-            system_message = f"""Ты — AI-ассистент для интеграций c различными системами. Твоя задача: анализировать запросы пользователей, выбирать подходящий инструмент и извлекать параметры.
+            system_message = f"""You are an AI assistant for system integrations. Your task: analyze user requests, select appropriate tools, and extract parameters.
 
-## Инструкция:
-1. Проанализируй текущий запрос и историю разговора
-2. Выбери несколько подходящих инструментов из списка ниже
-3. Извлеки все релевантные параметры
-4. Ответь ТОЛЬКО в формате JSON
+INSTRUCTIONS:
+1. Analyze the current request and chat history
+2. Select the most suitable tool from the list below
+3. Extract all relevant parameters
+4. Respond ONLY in JSON format
 
-## Доступные инструменты:
+AVAILABLE TOOLS:
 {grouped_tools_info}
 
-**Формат ответа:**
-```json
+RESPONSE FORMAT:
 {{
-    "tool": "название_инструмента",
+    "tool": "tool_name",
     "parameters": {{
         "param1": "value1",
         "param2": "value2"
     }},
-    "reasoning": "краткое обоснование"
+    "reasoning": "brief explanation"
 }}
 
-## История предыдущих сообщений: {full_context}"""
+CHAT HISTORY: {full_context}"""
 
             messages = [
                 {"role": "system", "content": system_message},
@@ -169,18 +168,46 @@ class IntelligentToolProcessor:
             
             response = await self.llm_client.llm_provider.generate_response(messages)
             
-            # Парсим ответ
+            # Парсим ответ с улучшенной обработкой для Llama 3.1:8b
             try:
-                extracted_data = json.loads(response)
-                for param_data in extracted_data.get('parameters', []):
-                    context_params.append(ContextParameter(
-                        name=param_data.get('name', ''),
-                        value=param_data.get('value', ''),
-                        source=param_data.get('source', 'current_message'),
-                        confidence=param_data.get('confidence', 0.5)
-                    ))
-            except json.JSONDecodeError:
-                logger.warning("⚠️ Не удалось распарсить извлеченные параметры")
+                # Очищаем ответ от возможных лишних символов
+                cleaned_response = response.strip()
+                
+                # Ищем JSON блок в ответе
+                json_start = cleaned_response.find('{')
+                json_end = cleaned_response.rfind('}') + 1
+                
+                if json_start != -1 and json_end > json_start:
+                    json_str = cleaned_response[json_start:json_end]
+                    extracted_data = json.loads(json_str)
+                    
+                    # Обрабатываем параметры
+                    parameters = extracted_data.get('parameters', [])
+                    if not parameters and 'tool' in extracted_data:
+                        # Если параметры в другом формате
+                        tool_params = extracted_data.get('parameters', {})
+                        if isinstance(tool_params, dict):
+                            for param_name, param_value in tool_params.items():
+                                context_params.append(ContextParameter(
+                                    name=param_name,
+                                    value=str(param_value),
+                                    source='llm_extraction',
+                                    confidence=0.7
+                                ))
+                    else:
+                        for param_data in parameters:
+                            context_params.append(ContextParameter(
+                                name=param_data.get('name', ''),
+                                value=param_data.get('value', ''),
+                                source=param_data.get('source', 'current_message'),
+                                confidence=param_data.get('confidence', 0.5)
+                            ))
+                else:
+                    logger.warning("⚠️ JSON не найден в ответе Llama")
+                    
+            except json.JSONDecodeError as e:
+                logger.warning(f"⚠️ Не удалось распарсить извлеченные параметры: {e}")
+                logger.debug(f"Ответ Llama: {response}")
             
             # Дополнительно извлекаем параметры с помощью регулярных выражений
             regex_params = self._extract_params_with_regex(full_context)
@@ -261,32 +288,44 @@ class IntelligentToolProcessor:
                 }
                 tools_info.append(tool_info)
             
+            # Группируем инструменты по серверам для лучшего понимания Llama
+            from collections import defaultdict
+            tools_by_server = defaultdict(list)
+            for tool in available_tools:
+                server = tool.get('server', 'No Server')
+                tool_info = f"- {tool.get('name', '')}: {tool.get('description', '')} (Params: {tool.get('inputSchema', {}).get('properties', {}).get('required', [])})"
+                tools_by_server[server].append(tool_info)
+
+            grouped_tools_info = ""
+            for server, tools in tools_by_server.items():
+                grouped_tools_info += f"\n{server}:\n"
+                grouped_tools_info += "\n".join(tools) + "\n"
+
             # Формируем системное сообщение с информацией об инструментах
-            system_message = f"""Ты эксперт по выбору подходящих инструментов для выполнения задач пользователя.
+            system_message = f"""You are a tool selection expert. Choose the most suitable tool for the user's request.
 
-Доступные инструменты:
-{json.dumps(tools_info, ensure_ascii=False, indent=2)}
+AVAILABLE TOOLS:
+{grouped_tools_info}
 
-Твоя задача - выбрать наиболее подходящий инструмент для выполнения запроса пользователя.
-Учитывай:
-1. Соответствие описания инструмента запросу пользователя
-2. Доступность необходимых параметров
-3. Логику и контекст запроса
+TASK: Select the best tool based on:
+1. Tool description matches user request
+2. Required parameters are available
+3. Request context and logic
 
-Отвечай только в формате JSON."""
+RESPOND ONLY IN JSON FORMAT."""
 
             # Пользовательское сообщение с запросом и параметрами
-            user_prompt = f"""Выбери наиболее подходящий инструмент для выполнения запроса пользователя.
+            user_prompt = f"""Select the most suitable tool for this user request.
 
-Запрос пользователя: {user_message}
+USER REQUEST: {user_message}
 
-Извлеченные параметры из контекста:
+EXTRACTED PARAMETERS:
 {json.dumps([{'name': p.name, 'value': p.value, 'confidence': p.confidence} for p in context_params], ensure_ascii=False, indent=2)}
 
-Верни результат в формате JSON:
+RESPONSE FORMAT:
 {{
-    "selected_tool": "название_инструмента",
-    "reason": "обоснование выбора",
+    "selected_tool": "tool_name",
+    "reason": "selection_reason",
     "confidence": 0.9
 }}"""
             
@@ -297,22 +336,36 @@ class IntelligentToolProcessor:
             
             response = await self.llm_client.llm_provider.generate_response(messages)
             
-            # Парсим ответ
+            # Парсим ответ с улучшенной обработкой для Llama 3.1:8b
             try:
-                selection_data = json.loads(response)
-                selected_tool_name = selection_data.get('selected_tool', '')
+                # Очищаем ответ от возможных лишних символов
+                cleaned_response = response.strip()
                 
-                # Находим выбранный инструмент
-                for tool in available_tools:
-                    if tool.get('name') == selected_tool_name:
-                        logger.info(f"✅ Выбран инструмент: {selected_tool_name}")
-                        return tool
+                # Ищем JSON блок в ответе
+                json_start = cleaned_response.find('{')
+                json_end = cleaned_response.rfind('}') + 1
                 
-                logger.warning(f"⚠️ Выбранный инструмент {selected_tool_name} не найден")
-                return None
+                if json_start != -1 and json_end > json_start:
+                    json_str = cleaned_response[json_start:json_end]
+                    selection_data = json.loads(json_str)
+                    
+                    selected_tool_name = selection_data.get('selected_tool', '')
+                    
+                    # Находим выбранный инструмент
+                    for tool in available_tools:
+                        if tool.get('name') == selected_tool_name:
+                            logger.info(f"✅ Выбран инструмент: {selected_tool_name}")
+                            return tool
+                    
+                    logger.warning(f"⚠️ Выбранный инструмент {selected_tool_name} не найден")
+                    return None
+                else:
+                    logger.warning("⚠️ JSON не найден в ответе Llama при выборе инструмента")
+                    return None
                 
-            except json.JSONDecodeError:
-                logger.warning("⚠️ Не удалось распарсить выбор инструмента")
+            except json.JSONDecodeError as e:
+                logger.warning(f"⚠️ Не удалось распарсить выбор инструмента: {e}")
+                logger.debug(f"Ответ Llama: {response}")
                 return None
                 
         except Exception as e:
