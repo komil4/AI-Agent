@@ -208,6 +208,24 @@ CHAT HISTORY: {full_context}"""
             except json.JSONDecodeError as e:
                 logger.warning(f"⚠️ Не удалось распарсить извлеченные параметры: {e}")
                 logger.debug(f"Ответ Llama: {response}")
+                
+                # Попытка извлечь параметры из текстового ответа
+                if 'tool' in response.lower() or 'parameter' in response.lower():
+                    # Простое извлечение параметров из текста
+                    lines = response.split('\n')
+                    for line in lines:
+                        if ':' in line and any(keyword in line.lower() for keyword in ['project', 'task', 'user', 'file', 'search']):
+                            parts = line.split(':', 1)
+                            if len(parts) == 2:
+                                param_name = parts[0].strip().lower().replace(' ', '_')
+                                param_value = parts[1].strip()
+                                if param_value and len(param_value) > 1:
+                                    context_params.append(ContextParameter(
+                                        name=param_name,
+                                        value=param_value,
+                                        source='text_extraction',
+                                        confidence=0.6
+                                    ))
             
             # Дополнительно извлекаем параметры с помощью регулярных выражений
             regex_params = self._extract_params_with_regex(full_context)
