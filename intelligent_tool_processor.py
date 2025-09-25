@@ -123,21 +123,36 @@ class IntelligentToolProcessor:
             if user_context.get('user_additional_context'):
                 full_context += f" {user_context['user_additional_context']}"
             
-            # Анализируем контекст с помощью LLM для извлечения параметров
-            extraction_prompt = f"""
-Проанализируй следующий контекст разговора и извлеки все возможные параметры для инструментов.
-
-Контекст: {full_context}
+            # Формируем системное сообщение с информацией об инструментах
+            tools_info = []
+            for tool in available_tools:
+                tool_info = {
+                    'name': tool.get('name', ''),
+                    'description': tool.get('description', ''),
+                    'required_params': tool.get('inputSchema', {}).get('properties', {}).get('required', [])
+                }
+                tools_info.append(tool_info)
+            
+            system_message = f"""Ты эксперт по извлечению параметров из текста для работы с инструментами.
 
 Доступные инструменты:
-{json.dumps([tool.get('name', '') for tool in available_tools], ensure_ascii=False, indent=2)}
+{json.dumps(tools_info, ensure_ascii=False, indent=2)}
 
-Найди и извлеки:
+Твоя задача - извлечь из контекста разговора параметры, которые могут быть полезны для этих инструментов.
+
+Ищи следующие типы параметров:
 1. Названия проектов, задач, пользователей
-2. ID задач, проектов, коммитов
+2. ID задач, проектов, коммитов  
 3. Ключевые слова для поиска
 4. Пути к файлам и директориям
 5. Любые другие параметры, которые могут быть полезны для инструментов
+
+Отвечай только в формате JSON."""
+
+            # Пользовательское сообщение с контекстом
+            user_prompt = f"""Проанализируй следующий контекст разговора и извлеки все возможные параметры для инструментов.
+
+Контекст: {full_context}
 
 Верни результат в формате JSON:
 {{
@@ -149,13 +164,12 @@ class IntelligentToolProcessor:
             "source": "current_message|chat_history|user_context"
         }}
     ]
-}}
-"""
+}}"""
             
             # Используем LLM для извлечения параметров
             messages = [
-                {"role": "system", "content": "Ты эксперт по извлечению параметров из текста. Отвечай только в формате JSON."},
-                {"role": "user", "content": extraction_prompt}
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_prompt}
             ]
             
             response = await self.llm_client.llm_provider.generate_response(messages)
@@ -188,7 +202,7 @@ class IntelligentToolProcessor:
         """Извлекает параметры с помощью регулярных выражений"""
         params = []
         
-        # Паттерны для различных типов параметров
+        # Паттерны для различных типов параметров (ищем в контексте, не в ключевых действиях)
         patterns = {
             'project_id': r'(?:проект|project)[\s:]*([A-Z][A-Z0-9-]+)',
             'task_id': r'(?:задача|task)[\s:]*([A-Z][A-Z0-9-]+)',
@@ -196,17 +210,30 @@ class IntelligentToolProcessor:
             'file_path': r'(/[^\s]+\.\w+)',
             'username': r'(?:пользователь|user)[\s:]*([a-zA-Z0-9_-]+)',
             'keyword': r'(?:найди|поиск|search)[\s:]*([^\s]+)',
+            'email': r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})',
+            'url': r'(https?://[^\s]+)',
+            'version': r'v?(\d+\.\d+(?:\.\d+)?)',
+            'number': r'\b(\d+)\b',
         }
+        
+        # Исключаем ключевые слова действий из поиска
+        action_keywords = [
+            'создай', 'найди', 'покажи', 'получи', 'обнови', 'удали', 'добавь',
+            'create', 'find', 'show', 'get', 'update', 'delete', 'add',
+            'поиск', 'список', 'детали', 'информация'
+        ]
         
         for param_name, pattern in patterns.items():
             matches = re.findall(pattern, text, re.IGNORECASE)
             for match in matches:
-                params.append(ContextParameter(
-                    name=param_name,
-                    value=match,
-                    source="regex_extraction",
-                    confidence=0.8
-                ))
+                # Проверяем, что найденное значение не является ключевым словом действия
+                if not any(keyword.lower() in match.lower() for keyword in action_keywords):
+                    params.append(ContextParameter(
+                        name=param_name,
+                        value=match,
+                        source="regex_extraction",
+                        confidence=0.8
+                    ))
         
         return params
     
@@ -239,31 +266,38 @@ class IntelligentToolProcessor:
                 }
                 tools_info.append(tool_info)
             
-            selection_prompt = f"""
-Выбери наиболее подходящий инструмент для выполнения запроса пользователя.
-
-Запрос пользователя: {user_message}
+            # Формируем системное сообщение с информацией об инструментах
+            system_message = f"""Ты эксперт по выбору подходящих инструментов для выполнения задач пользователя.
 
 Доступные инструменты:
 {json.dumps(tools_info, ensure_ascii=False, indent=2)}
 
+Твоя задача - выбрать наиболее подходящий инструмент для выполнения запроса пользователя.
+Учитывай:
+1. Соответствие описания инструмента запросу пользователя
+2. Доступность необходимых параметров
+3. Логику и контекст запроса
+
+Отвечай только в формате JSON."""
+
+            # Пользовательское сообщение с запросом и параметрами
+            user_prompt = f"""Выбери наиболее подходящий инструмент для выполнения запроса пользователя.
+
+Запрос пользователя: {user_message}
+
 Извлеченные параметры из контекста:
 {json.dumps([{'name': p.name, 'value': p.value, 'confidence': p.confidence} for p in context_params], ensure_ascii=False, indent=2)}
-
-Выбери инструмент, который лучше всего подходит для выполнения запроса.
-Учитывай доступность необходимых параметров.
 
 Верни результат в формате JSON:
 {{
     "selected_tool": "название_инструмента",
     "reason": "обоснование выбора",
     "confidence": 0.9
-}}
-"""
+}}"""
             
             messages = [
-                {"role": "system", "content": "Ты эксперт по выбору инструментов. Отвечай только в формате JSON."},
-                {"role": "user", "content": selection_prompt}
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_prompt}
             ]
             
             response = await self.llm_client.llm_provider.generate_response(messages)
@@ -396,20 +430,38 @@ class IntelligentToolProcessor:
     
     async def _extract_param_from_message(self, param_name: str, message: str) -> Optional[str]:
         """Извлекает параметр из сообщения пользователя"""
+        # Исключаем ключевые слова действий из поиска
+        action_keywords = [
+            'создай', 'найди', 'покажи', 'получи', 'обнови', 'удали', 'добавь',
+            'create', 'find', 'show', 'get', 'update', 'delete', 'add',
+            'поиск', 'список', 'детали', 'информация'
+        ]
+        
         # Простая логика извлечения параметров
         if param_name in ['project_id', 'project']:
             match = re.search(r'проект[:\s]+([A-Z][A-Z0-9-]+)', message, re.IGNORECASE)
-            if match:
+            if match and not any(keyword.lower() in match.group(1).lower() for keyword in action_keywords):
                 return match.group(1)
         
         if param_name in ['task_id', 'task', 'issue']:
             match = re.search(r'(?:задача|task|issue)[:\s]+([A-Z][A-Z0-9-]+)', message, re.IGNORECASE)
-            if match:
+            if match and not any(keyword.lower() in match.group(1).lower() for keyword in action_keywords):
                 return match.group(1)
         
         if param_name in ['username', 'user']:
             match = re.search(r'(?:пользователь|user)[:\s]+([a-zA-Z0-9_-]+)', message, re.IGNORECASE)
-            if match:
+            if match and not any(keyword.lower() in match.group(1).lower() for keyword in action_keywords):
+                return match.group(1)
+        
+        if param_name in ['keyword', 'query', 'search']:
+            # Ищем ключевые слова после действия поиска
+            match = re.search(r'(?:найди|поиск|search)[:\s]+([^\s]+)', message, re.IGNORECASE)
+            if match and not any(keyword.lower() in match.group(1).lower() for keyword in action_keywords):
+                return match.group(1)
+        
+        if param_name in ['file_path', 'path', 'file']:
+            match = re.search(r'(?:файл|file)[:\s]+([^\s]+)', message, re.IGNORECASE)
+            if match and not any(keyword.lower() in match.group(1).lower() for keyword in action_keywords):
                 return match.group(1)
         
         return None
