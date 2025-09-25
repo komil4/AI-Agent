@@ -124,46 +124,43 @@ class IntelligentToolProcessor:
                 full_context += f" {user_context['user_additional_context']}"
             
             # Формируем системное сообщение с информацией об инструментах
-            tools_info = []
+            # Группируем инструменты по серверам
+            from collections import defaultdict
+
+            tools_by_server = defaultdict(list)
             for tool in available_tools:
-                tool_info = {
-                    'name': tool.get('name', ''),
-                    'description': tool.get('description', ''),
-                    'required_params': tool.get('inputSchema', {}).get('properties', {}).get('required', [])
-                }
-                tools_info.append(tool_info)
-            
-            system_message = f"""Ты - AI-ассистент для работы с GitLab, Jira и LDAP системами. Твоя задача:
+                server = tool.get('server', 'Без сервера')
+                tool_info = f"- {tool.get('name', '')} - {tool.get('description', '')} - Параметры: {tool.get('inputSchema', {}).get('properties', {}).get('required', [])}"
+                tools_by_server[server].append(tool_info)
 
-1. **Анализировать ВСЮ историю разговора** - текущее сообщение и предыдущий контекст
-2. **Определять наиболее подходящий инструмент** на основе всей доступной информации
-3. **Извлекать параметры из всей истории**, а не только из последнего сообщения
-4. **Учитывать эволюцию запроса** и уточняющие детали из предыдущих сообщений
+            grouped_tools_info = ""
+            for server, tools in tools_by_server.items():
+                grouped_tools_info += f"\n### {server} Tools\n"
+                grouped_tools_info += "\n".join(tools) + "\n"
 
-**Приоритетность источников параметров:**
-- Высший приоритет: текущее сообщение пользователя
-- Средний приоритет: предыдущие сообщения пользователя в этом разговоре  
-- Низший приоритет: системный контекст и общие знания
+            system_message = f"""Ты — AI-ассистент для интеграций c различными системами. Твоя задача: анализировать запросы пользователей, выбирать подходящий инструмент и извлекать параметры.
 
-Доступные инструменты сгруппированы по системам:
-{json.dumps(tools_info, ensure_ascii=False, indent=2)}
+## Инструкция:
+1. Проанализируй текущий запрос и историю разговора
+2. Выбери несколько подходящих инструментов из списка ниже
+3. Извлеки все релевантные параметры
+4. Ответь ТОЛЬКО в формате JSON
+
+## Доступные инструменты:
+{grouped_tools_info}
 
 **Формат ответа:**
+```json
 {{
     "tool": "название_инструмента",
-    "parameters": [
-        {{
-            "name": "название_параметра",
-            "value": "значение",
-            "confidence": 0.9
-        }}
-    ],
-    "reasoning": "краткое обоснование выбора инструмента"
+    "parameters": {{
+        "param1": "value1",
+        "param2": "value2"
+    }},
+    "reasoning": "краткое обоснование"
 }}
 
-История предыдущих сообщений: {full_context}
-
-Извлекай параметры: имена пользователей, ID, названия проектов, пути к файлам, ключевые слова поиска."""
+## История предыдущих сообщений: {full_context}"""
 
             messages = [
                 {"role": "system", "content": system_message},
