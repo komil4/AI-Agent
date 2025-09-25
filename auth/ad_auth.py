@@ -57,6 +57,8 @@ class ADAuthenticator:
         self.ad_server = None
         self.ad_domain = None
         self.ad_base_dn = None
+        self.ad_service_user = None
+        self.ad_service_password = None
         self.jwt_secret = 'super-secret-key'
         self.jwt_algorithm = 'HS256'
         self.jwt_expire_hours = 24
@@ -73,102 +75,45 @@ class ADAuthenticator:
             return None
         
         try:
+
             server = self.ad_server
-            
-            # Пробуем разные методы аутентификации
-            
             # 1. Простая аутентификация с sAMAccountName
             try:
-                user_dn = f"CN={username},{self.ad_base_dn}"
-                with Connection(server, user=user_dn, password=password) as conn:
-                    if conn.bind():
-                        user_info = self._get_user_info(conn, username)
-                        if user_info:
-                            return user_info
+                user_dn = f"CN={self.ad_service_user},{self.ad_base_dn}"
+                connection = Connection(server, user=user_dn, password=self.ad_service_password)
+                if connection.bind():
+                    user_info = self._get_user_info(connection, username)
+                    if user_info:
+                        return user_info
             except Exception as e:
                 logger.warning(f"DN аутентификация не удалась: {e}")
             
             # 2. Аутентификация с UPN (User Principal Name)
             try:
-                user_dn = f"{username}@{self.ad_domain}"
-                with Connection(server, user=user_dn, password=password) as conn:
-                    if conn.bind():
-                        user_info = self._get_user_info(conn, username)
-                        if user_info:
-                            return user_info
+                user_dn = f"{self.ad_service_user}@{self.ad_domain}"
+                connection = Connection(server, user=user_dn, password=self.ad_service_password)
+                if connection.bind():
+                    user_info = self._get_user_info(connection, username)
+                    if user_info:
+                        return user_info    
             except Exception as e:
                 logger.warning(f"UPN аутентификация не удалась: {e}")
             
             # 3. Аутентификация с sAMAccountName
             try:
-                user_dn = f"{self.ad_domain}\\{username}"
-                with Connection(server, user=user_dn, password=password) as conn:
-                    if conn.bind():
-                        user_info = self._get_user_info(conn, username)
-                        if user_info:
-                            return user_info
+                user_dn = f"{self.ad_domain}\\{self.ad_service_user}"
+                connection = Connection(server, user=user_dn, password=self.ad_service_password)
+                if connection.bind():
+                    user_info = self._get_user_info(connection, username)
+                    if user_info:
+                        return user_info 
             except Exception as e:
                 logger.warning(f"sAMAccountName аутентификация не удалась: {e}")
+                       
+            logger.warning(f"❌ Пользователь не найден в AD: {username}")
+            connection.unbind()
+            return None
             
-            # 4. Поиск пользователя и аутентификация по найденному DN
-            try:
-                user_dn = self._find_user_dn(server, username)
-                if user_dn:
-                    logger.info(f"Найден DN пользователя: {user_dn}")
-                    
-                    # Аутентифицируемся с найденным DN
-                    with Connection(server, user=user_dn, password=password) as auth_conn:
-                        if auth_conn.bind():
-                            user_info = self._get_user_info(auth_conn, username)
-                            if user_info:
-                                return user_info
-            except Exception as e:
-                logger.warning(f"Search DN аутентификация не удалась: {e}")
-            
-            
-            # Поиск пользователя в AD
-            search_filter = f"(sAMAccountName={username})"
-            conn.search(
-                self.ad_base_dn,
-                search_filter,
-                attributes=['displayName', 'mail', 'memberOf', 'sAMAccountName']
-            )
-            
-            if conn.entries:
-                user_entry = conn.entries[0]
-                
-                # Извлекаем группы
-                groups = []
-                if hasattr(user_entry, 'memberOf'):
-                    for group_dn in user_entry.memberOf.values:
-                        # Извлекаем имя группы из DN
-                        group_name = group_dn.split(',')[0].replace('CN=', '')
-                        groups.append(group_name)
-                
-                # Определяем права администратора
-                is_admin = any('admin' in group.lower() for group in groups)
-                
-                user_info = {
-                    'username': username,
-                    'display_name': str(user_entry.displayName) if hasattr(user_entry, 'displayName') else username,
-                    'email': str(user_entry.mail) if hasattr(user_entry, 'mail') else '',
-                    'groups': groups,
-                    'is_admin': is_admin
-                }
-                
-                logger.info(f"✅ LDAP аутентификация успешна: {username}")
-                logger.info(f"   Display Name: {user_info['display_name']}")
-                logger.info(f"   Email: {user_info['email']}")
-                logger.info(f"   Groups: {groups}")
-                logger.info(f"   Is Admin: {is_admin}")
-                
-                conn.unbind()
-                return user_info
-            else:
-                logger.warning(f"❌ Пользователь не найден в AD: {username}")
-                conn.unbind()
-                return None
-                
         except LDAPException as e:
             logger.error(f"❌ Ошибка LDAP аутентификации: {e}")
             return None
@@ -263,10 +208,13 @@ class ADAuthenticator:
             if ad_config.get('enabled', False):
                 self.ad_server = Server(
                     ad_config.get('server'),
-                    get_info=ALL
+                    get_info=ALL,
+                    connect_timeout=60
                 )
                 self.ad_domain = ad_config.get('domain')
                 self.ad_base_dn = ad_config.get('base_dn')
+                self.ad_service_user = ad_config.get('service_user', '')
+                self.ad_service_password = ad_config.get('service_password', '')
                 
                 # JWT настройки
                 jwt_config = ad_config.get('jwt', {})
@@ -286,41 +234,42 @@ class ADAuthenticator:
         Получает информацию о пользователе из Active Directory
         """
         try:
-            # Поиск пользователя в AD
             search_filter = f"(sAMAccountName={username})"
+            # Пробуем анонимное подключение
             conn.search(
                 search_base=self.ad_base_dn,
                 search_filter=search_filter,
                 search_scope='SUBTREE',
-                attributes=['cn', 'mail', 'displayName', 'memberOf', 'sAMAccountName']
+                attributes=['distinguishedName']
             )
-
-            # Извлекаем группы
-            entry = conn.entries[0]
-            groups = []
-            if hasattr(entry, 'memberOf'):
-                for group_dn in entry.memberOf.values:
-                    # Извлекаем имя группы из DN
-                    group_name = group_dn.split(',')[0].replace('CN=', '')
-                    groups.append(group_name)
-                    
-            # Определяем права администратора
-            is_admin = any('admin' in group.lower() for group in groups)
-
-            if conn.entries:
+                        
+            if conn.entries:       
+                # Извлекаем группы
                 entry = conn.entries[0]
-                user_info = {
-                    'username': str(entry.sAMAccountName),
-                    'display_name': str(entry.displayName) if entry.displayName else username,
-                    'email': str(entry.mail) if entry.mail else None,
-                    'groups': groups,
-                    'is_admin': is_admin
-                }
-                return user_info
-            else:
-                logger.warning(f"Пользователь {username} не найден в Active Directory")
-                return None
-                
+                groups = []
+                if hasattr(entry, 'memberOf'):
+                    for group_dn in entry.memberOf.values:
+                        # Извлекаем имя группы из DN
+                        group_name = group_dn.split(',')[0].replace('CN=', '')
+                        groups.append(group_name)
+                        
+                # Определяем права администратора
+                is_admin = any('admin' in group.lower() for group in groups)
+
+                if conn.entries:
+                    entry = conn.entries[0]
+                    user_info = {
+                        'username': str(entry.sAMAccountName),
+                        'display_name': str(entry.displayName) if entry.displayName else username,
+                        'email': str(entry.mail) if entry.mail else None,
+                        'groups': groups,
+                        'is_admin': is_admin
+                    }
+                    return user_info
+                else:
+                    logger.warning(f"Пользователь {username} не найден в Active Directory")
+                    return None
+            return None    
         except Exception as e:
             logger.error(f"Ошибка получения информации о пользователе: {e}")
             return None

@@ -344,13 +344,41 @@ class LDAPMCPServer(BaseMCPServer):
             
             # Создаем подключение к LDAP
             server = ldap3.Server(self.ldap_url)
-            self.connection = ldap3.Connection(
-                server,
-                user=self.ldap_user,
-                password=self.ldap_password,
-                auto_bind=True
-            )
+            # 1. Простая аутентификация с sAMAccountName
+            try:
+                user_dn = f"CN={self.ldap_user},{self.base_dn}"
+                connection = ldap3.Connection(server, user=user_dn, password=self.ldap_password)
+                self.connection = connection
+            except Exception as e:
+                logger.warning(f"DN аутентификация не удалась: {e}")
             
+            # 2. Аутентификация с UPN (User Principal Name)
+            try:
+                user_dn = f"{self.ldap_user}@{self.domain}"
+                connection = ldap3.Connection(server, user=user_dn, password=self.ldap_password)
+                self.connection = connection    
+            except Exception as e:
+                logger.warning(f"UPN аутентификация не удалась: {e}")
+            
+            # 3. Аутентификация с sAMAccountName
+            try:
+                user_dn = f"{self.domain}\\{self.ldap_user}"
+                connection = ldap3.Connection(server, user=user_dn, password=self.ldap_password)
+                self.connection = connection
+            except Exception as e:
+                logger.warning(f"sAMAccountName аутентификация не удалась: {e}")
+            
+            # 4. Поиск пользователя и аутентификация по найденному DN
+            try:
+                user_dn = self._find_user_dn(server, self.ldap_user)
+                if user_dn:
+                    logger.info(f"Найден DN пользователя: {user_dn}")
+                    # Аутентифицируемся с найденным DN
+                    connection = ldap3.Connection(server, user=user_dn, password=self.ldap_password)
+                    self.connection = connection
+            except Exception as e:
+                logger.warning(f"sAMAccountName аутентификация не удалась: {e}")
+
             logger.info(f"✅ Подключение к LDAP успешно: {self.ldap_url}")
             
         except Exception as e:
