@@ -144,7 +144,8 @@ INSTRUCTIONS:
 1. Analyze the current request and chat history
 2. Select the most suitable tool from the list below
 3. Extract all relevant parameters
-4. Respond ONLY in JSON format
+
+IMPORTANT Respond ONLY in JSON format without additional info!
 
 AVAILABLE TOOLS:
 {grouped_tools_info}
@@ -327,8 +328,7 @@ CHAT HISTORY: {full_context}"""
 
             grouped_tools_info = ""
             for server, tools in tools_by_server.items():
-                grouped_tools_info += f"\n{server}:\n"
-                grouped_tools_info += "\n".join(tools) + "\n"
+                grouped_tools_info += f"\n ".join(tools) + "\n"
 
             # Формируем системное сообщение с информацией об инструментах
             system_message = f"""You are a tool selection expert. Choose the most suitable tool for the user's request.
@@ -341,26 +341,23 @@ TASK: Select the best tool based on:
 2. Required parameters are available
 3. Request context and logic
 
-RESPOND ONLY IN JSON FORMAT."""
-
-            # Пользовательское сообщение с запросом и параметрами
-            user_prompt = f"""Select the most suitable tool for this user request.
-
-USER REQUEST: {user_message}
+CRITICAL: YOU MUST RESPONSE ONLY WITH RAW JSON, WITHOUT ANY ADDITIONAL TEXT, EXPLANATIONS, OR MARKDOWN FORMATTING.
 
 EXTRACTED PARAMETERS:
 {json.dumps([{'name': p.name, 'value': p.value, 'confidence': p.confidence} for p in context_params], ensure_ascii=False, indent=2)}
 
-RESPONSE FORMAT:
+RESPONSE FORMAT - STRICT JSON ONLY:
 {{
     "selected_tool": "tool_name",
     "reason": "selection_reason",
     "confidence": 0.9
-}}"""
+}}
+
+REMEMBER: NO TEXT BEFORE OR AFTER JSON. ONLY THE JSON OBJECT ITSELF."""
             
             messages = [
                 {"role": "system", "content": system_message},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": user_message}
             ]
             
             response = await self.llm_client.llm_provider.generate_response(messages)
