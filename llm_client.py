@@ -7,6 +7,8 @@ import os
 import json
 import logging
 from typing import Dict, Any, List, Optional
+
+from sqlalchemy import false
 from config.llm_config import LLMProvider, llm_config_manager
 from llm_providers import LLMProviderFactory
 
@@ -134,7 +136,7 @@ class LLMClient:
             # Проверяем, нужно ли использовать интеллектуальную обработку
             use_intelligent = user_context.get('use_intelligent_tools', True)
             
-            if use_intelligent:
+            if false and use_intelligent:
                 # Используем интеллектуальный процессор инструментов
                 from intelligent_tool_processor import IntelligentToolProcessor
                 from mcp_client import mcp_client
