@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
-from database import get_db, User, ChatSession, Message, ToolUsage
+from database import get_db, User, ChatSession, Message, ToolUsage, is_database_enabled
 
 # Импорт для работы с паролями
 try:
@@ -18,7 +18,7 @@ try:
 except ImportError:
     PASSWORD_AVAILABLE = False
     pwd_context = None
-    print("⚠️ passlib не установлен. Хеширование паролей будет недоступно.")
+    print("[WARN] passlib не установлен. Хеширование паролей будет недоступно.")
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,18 @@ class ChatService:
     
     def get_or_create_user(self, username: str, user_info: Dict[str, Any]) -> User:
         """Получает или создает пользователя"""
+        if not is_database_enabled():
+            # Возвращаем фиктивного пользователя, если база данных отключена
+            fake_user = User()
+            fake_user.id = 1
+            fake_user.username = username
+            fake_user.email = user_info.get('email', '')
+            fake_user.full_name = user_info.get('full_name', username)
+            fake_user.is_ldap_user = user_info.get('is_ldap_user', False)
+            fake_user.created_at = datetime.now()
+            fake_user.updated_at = datetime.now()
+            return fake_user
+            
         with get_db() as session:
             user = session.query(User).filter(User.username == username).first()
             
@@ -58,7 +70,7 @@ class ChatService:
                 session.add(user)
                 session.commit()
                 session.refresh(user)
-                logger.info(f"✅ Создан новый пользователь: {username} (ID: {user.id})")
+                logger.info(f"[OK] Создан новый пользователь: {username} (ID: {user.id})")
                 logger.info(f"   Display Name: {user.display_name}")
                 logger.info(f"   Email: {user.email}")
                 logger.info(f"   Groups: {user.groups}")
@@ -90,10 +102,10 @@ class ChatService:
                     changes.append(f"is_admin: {old_is_admin} -> {user.is_admin}")
                 
                 if changes:
-                    logger.info(f"✅ Обновлен пользователь: {username} (ID: {user.id})")
+                    logger.info(f"[OK] Обновлен пользователь: {username} (ID: {user.id})")
                     logger.info(f"   Изменения: {', '.join(changes)}")
                 else:
-                    logger.info(f"✅ Обновлен пользователь: {username} (ID: {user.id}) - только last_login")
+                    logger.info(f"[OK] Обновлен пользователь: {username} (ID: {user.id}) - только last_login")
             
             # Отсоединяем объект от сессии и возвращаем данные
             session.expunge(user)
@@ -101,6 +113,10 @@ class ChatService:
     
     def authenticate_local_user(self, username: str, password: str) -> Optional[User]:
         """Аутентификация локального пользователя по паролю"""
+        if not is_database_enabled():
+            logger.warning("[WARN] База данных отключена, локальная аутентификация недоступна")
+            return None
+            
         with get_db() as session:
             user = session.query(User).filter(
                 User.username == username,
@@ -118,20 +134,31 @@ class ChatService:
                         # Отсоединяем объект от сессии
                         session.expunge(user)
                         
-                        logger.info(f"✅ Локальная аутентификация успешна: {username}")
+                        logger.info(f"[OK] Локальная аутентификация успешна: {username}")
                         return user
                 except Exception as e:
-                    logger.error(f"❌ Ошибка проверки пароля для пользователя {username}: {e}")
+                    logger.error(f"[ERROR] Ошибка проверки пароля для пользователя {username}: {e}")
                     # Если ошибка с хешем, считаем пароль неверным
                     pass
             
-            logger.warning(f"❌ Неверные учетные данные для локального пользователя: {username}")
+            logger.warning(f"[ERROR] Неверные учетные данные для локального пользователя: {username}")
             return None
     
     # --- Управление сессиями чата ---
     
     def create_chat_session(self, user_id: int, session_name: str = None) -> ChatSession:
         """Создает новую сессию чата"""
+        if not is_database_enabled():
+            # Возвращаем фиктивную сессию, если база данных отключена
+            fake_session = ChatSession()
+            fake_session.id = 1
+            fake_session.user_id = user_id
+            fake_session.name = session_name or f"Сессия {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            fake_session.is_active = True
+            fake_session.created_at = datetime.now()
+            fake_session.updated_at = datetime.now()
+            return fake_session
+            
         with get_db() as session:
             if not session_name:
                 session_name = f"Сессия {datetime.now().strftime('%Y-%m-%d %H:%M')}"
@@ -148,11 +175,22 @@ class ChatService:
             # Отсоединяем объект от сессии
             session.expunge(chat_session)
             
-            logger.info(f"✅ Создана новая сессия чата: {session_name}")
+            logger.info(f"[OK] Создана новая сессия чата: {session_name}")
             return chat_session
     
     def get_active_session(self, user_id: int) -> Optional[ChatSession]:
         """Получает активную сессию пользователя"""
+        if not is_database_enabled():
+            # Возвращаем фиктивную активную сессию, если база данных отключена
+            fake_session = ChatSession()
+            fake_session.id = 1
+            fake_session.user_id = user_id
+            fake_session.name = f"Сессия {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            fake_session.is_active = True
+            fake_session.created_at = datetime.now()
+            fake_session.updated_at = datetime.now()
+            return fake_session
+            
         with get_db() as session:
             chat_session = session.query(ChatSession).filter(
                 and_(ChatSession.user_id == user_id, ChatSession.is_active == True)
@@ -200,7 +238,7 @@ class ChatService:
                 chat_session.is_active = False
                 chat_session.updated_at = datetime.utcnow()
                 session.commit()
-                logger.info(f"✅ Сессия {session_id} закрыта")
+                logger.info(f"[OK] Сессия {session_id} закрыта")
     
     # --- Управление сообщениями ---
     
@@ -239,7 +277,7 @@ class ChatService:
             # Отсоединяем объект от сессии
             session.expunge(message)
             
-            logger.info(f"✅ Добавлено сообщение в сессию {session_id}")
+            logger.info(f"[OK] Добавлено сообщение в сессию {session_id}")
             return message_data
     
     def get_session_messages(self, session_id: int, limit: int = 50) -> List[Dict[str, Any]]:
@@ -330,7 +368,7 @@ class ChatService:
             # Отсоединяем объект от сессии и возвращаем данные
             session.expunge(tool_usage)
             
-            logger.info(f"✅ Добавлено использование инструмента: {tool_name}")
+            logger.info(f"[OK] Добавлено использование инструмента: {tool_name}")
             return {
                 'id': tool_usage.id,
                 'message_id': tool_usage.message_id,
@@ -386,7 +424,7 @@ class ChatService:
             return pwd_context.verify(plain_password, hashed_password)
         except ValueError as e:
             if "unsupported hash type" in str(e):
-                logger.warning(f"⚠️ Неподдерживаемый тип хеша: {e}")
+                logger.warning(f"[WARN] Неподдерживаемый тип хеша: {e}")
                 # Если хеш неподдерживаемый, считаем пароль неверным
                 return False
             raise
@@ -401,13 +439,13 @@ class ChatService:
                 if user:
                     user.user_context = context
                     session.commit()
-                    logger.info(f"✅ Контекст пользователя сохранен: {user.username} (ID: {user_id})")
+                    logger.info(f"[OK] Контекст пользователя сохранен: {user.username} (ID: {user_id})")
                     return True
                 else:
-                    logger.error(f"❌ Пользователь не найден: ID {user_id}")
+                    logger.error(f"[ERROR] Пользователь не найден: ID {user_id}")
                     return False
         except Exception as e:
-            logger.error(f"❌ Ошибка сохранения контекста пользователя {user_id}: {e}")
+            logger.error(f"[ERROR] Ошибка сохранения контекста пользователя {user_id}: {e}")
             return False
     
     def get_user_context(self, user_id: int) -> Optional[str]:
@@ -420,10 +458,10 @@ class ChatService:
                     logger.debug(f"📋 Контекст пользователя получен: {user.username} (ID: {user_id})")
                     return context
                 else:
-                    logger.error(f"❌ Пользователь не найден: ID {user_id}")
+                    logger.error(f"[ERROR] Пользователь не найден: ID {user_id}")
                     return None
         except Exception as e:
-            logger.error(f"❌ Ошибка получения контекста пользователя {user_id}: {e}")
+            logger.error(f"[ERROR] Ошибка получения контекста пользователя {user_id}: {e}")
             return None
     
     def update_user_context(self, user_id: int, new_context: str) -> bool:
@@ -439,13 +477,13 @@ class ChatService:
                         user.user_context = new_context
                     
                     session.commit()
-                    logger.info(f"✅ Контекст пользователя обновлен: {user.username} (ID: {user_id})")
+                    logger.info(f"[OK] Контекст пользователя обновлен: {user.username} (ID: {user_id})")
                     return True
                 else:
-                    logger.error(f"❌ Пользователь не найден: ID {user_id}")
+                    logger.error(f"[ERROR] Пользователь не найден: ID {user_id}")
                     return False
         except Exception as e:
-            logger.error(f"❌ Ошибка обновления контекста пользователя {user_id}: {e}")
+            logger.error(f"[ERROR] Ошибка обновления контекста пользователя {user_id}: {e}")
             return False
     
     def clear_user_context(self, user_id: int) -> bool:
@@ -456,13 +494,13 @@ class ChatService:
                 if user:
                     user.user_context = None
                     session.commit()
-                    logger.info(f"✅ Контекст пользователя очищен: {user.username} (ID: {user_id})")
+                    logger.info(f"[OK] Контекст пользователя очищен: {user.username} (ID: {user_id})")
                     return True
                 else:
-                    logger.error(f"❌ Пользователь не найден: ID {user_id}")
+                    logger.error(f"[ERROR] Пользователь не найден: ID {user_id}")
                     return False
         except Exception as e:
-            logger.error(f"❌ Ошибка очистки контекста пользователя {user_id}: {e}")
+            logger.error(f"[ERROR] Ошибка очистки контекста пользователя {user_id}: {e}")
             return False
 
 # ============================================================================

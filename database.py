@@ -106,9 +106,9 @@ class DatabaseManager:
         """Создает все таблицы"""
         try:
             Base.metadata.create_all(bind=self.engine)
-            logger.info("✅ Таблицы базы данных созданы")
+            logger.info("[OK] Таблицы базы данных созданы")
         except Exception as e:
-            logger.error(f"❌ Ошибка создания таблиц: {e}")
+            logger.error(f"[ERROR] Ошибка создания таблиц: {e}")
             raise
     
     def get_session(self):
@@ -136,12 +136,28 @@ db_manager = None
 def init_database(database_url: str):
     """Инициализирует базу данных"""
     global db_manager
-    db_manager = DatabaseManager(database_url)
-    db_manager.create_tables()
-    return db_manager
+    
+    if not database_url:
+        logger.info("[INFO] База данных отключена, инициализация пропущена")
+        db_manager = None
+        return None
+    
+    try:
+        db_manager = DatabaseManager(database_url)
+        db_manager.create_tables()
+        logger.info("[OK] База данных инициализирована успешно")
+        return db_manager
+    except Exception as e:
+        logger.error(f"[ERROR] Ошибка инициализации базы данных: {e}")
+        db_manager = None
+        raise
 
 def get_db():
     """Возвращает сессию базы данных"""
     if db_manager is None:
-        raise RuntimeError("База данных не инициализирована")
+        raise RuntimeError("База данных отключена или не инициализирована")
     return db_manager.get_session()
+
+def is_database_enabled() -> bool:
+    """Проверяет, включена ли база данных"""
+    return db_manager is not None
