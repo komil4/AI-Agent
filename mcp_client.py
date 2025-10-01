@@ -134,7 +134,7 @@ class MCPClient:
             # Получаем инструменты от всех серверов
             for server_name, server in self.servers.items():
                 try:
-                    server_tools = await server.get_tools()
+                    server_tools = server.get_tools()
                     for tool in server_tools:
                         tool['server'] = server_name
                         tools.append(tool)
@@ -144,7 +144,7 @@ class MCPClient:
             # Получаем инструменты от встроенных серверов
             for server_name, server in self.builtin_servers.items():
                 try:
-                    server_tools = await server.get_tools()
+                    server_tools = server.get_tools()
                     for tool in server_tools:
                         tool['server'] = server_name
                         tools.append(tool)
