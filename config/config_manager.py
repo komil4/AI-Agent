@@ -131,26 +131,30 @@ class ConfigManager:
             # Сохраняем конфигурацию
             self._save_config(config)
             
-            logger.info(f"✅ Конфигурация секции '{section}' обновлена пользователем: {updated_by}")
+            logger.info(f"[OK] Конфигурация секции '{section}' обновлена пользователем: {updated_by}")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Ошибка обновления конфигурации: {e}")
+            logger.error(f"[ERROR] Ошибка обновления конфигурации: {e}")
             return False
     
     def reset_config(self) -> bool:
         """Сбрасывает конфигурацию к значениям по умолчанию"""
         try:
             self._save_config(self.default_config)
-            logger.info("✅ Конфигурация сброшена к значениям по умолчанию")
+            logger.info("[OK] Конфигурация сброшена к значениям по умолчанию")
             return True
         except Exception as e:
-            logger.error(f"❌ Ошибка сброса конфигурации: {e}")
+            logger.error(f"[ERROR] Ошибка сброса конфигурации: {e}")
             return False
     
     def get_database_url(self) -> str:
         """Получает URL подключения к базе данных"""
         db_config = self.get_service_config('database')
+        
+        # Проверяем, включена ли база данных
+        if not db_config.get('enabled', False):
+            return None
         
         # Проверяем переменные окружения
         host = os.getenv('DB_HOST', db_config.get('host', 'localhost'))
@@ -230,7 +234,7 @@ class ConfigManager:
         """Создает файл конфигурации если его нет"""
         if not os.path.exists(self.config_file):
             self._save_config(self.default_config)
-            logger.info(f"✅ Создан файл конфигурации: {self.config_file}")
+            logger.info(f"[OK] Создан файл конфигурации: {self.config_file}")
     
     def _load_config(self) -> Dict[str, Any]:
         """Загружает конфигурацию из файла"""
@@ -240,7 +244,7 @@ class ConfigManager:
                 # Объединяем с конфигурацией по умолчанию для новых полей
                 return self._merge_configs(self.default_config, config)
         except Exception as e:
-            logger.error(f"❌ Ошибка загрузки конфигурации: {e}")
+            logger.error(f"[ERROR] Ошибка загрузки конфигурации: {e}")
             return self.default_config.copy()
     
     def _save_config(self, config: Dict[str, Any]):
@@ -249,7 +253,7 @@ class ConfigManager:
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"❌ Ошибка сохранения конфигурации: {e}")
+            logger.error(f"[ERROR] Ошибка сохранения конфигурации: {e}")
             raise
     
     def _merge_configs(self, default: Dict[str, Any], current: Dict[str, Any]) -> Dict[str, Any]:

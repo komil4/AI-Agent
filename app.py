@@ -103,34 +103,37 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 async def startup_event():
     """Инициализация при запуске приложения"""
     try:
-        logger.info("🚀 Запуск MCP Chat...")
+        logger.info("[STARTUP] Запуск MCP Chat...")
         
         # Инициализация базы данных
         database_url = config_manager.get_database_url()
-        init_database(database_url)
+        if database_url:
+            init_database(database_url)
+        else:
+            logger.info("[INFO] База данных отключена в конфигурации")
         
         # Инициализация MCP клиента
         await mcp_client.initialize_servers()
         
-        logger.info("✅ MCP Chat запущен успешно")
+        logger.info("[OK] MCP Chat запущен успешно")
         
     except Exception as e:
-        logger.error(f"❌ Ошибка запуска: {e}")
+        logger.error(f"[ERROR] Ошибка запуска: {e}")
         raise
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Очистка при завершении работы приложения"""
     try:
-        logger.info("🛑 Завершение работы MCP Chat...")
+        logger.info("[SHUTDOWN] Завершение работы MCP Chat...")
         
         # Закрытие MCP сессий
         await mcp_client.close_all_sessions()
         
-        logger.info("✅ MCP Chat завершен")
+        logger.info("[OK] MCP Chat завершен")
         
     except Exception as e:
-        logger.error(f"❌ Ошибка закрытия MCP сессий: {e}")
+        logger.error(f"[ERROR] Ошибка закрытия MCP сессий: {e}")
 
 # --- Статические страницы ---
 
@@ -171,7 +174,7 @@ async def login(login_data: LoginRequest):
         
         if db_user:
             # Локальная аутентификация успешна
-            logger.info(f"✅ Локальная аутентификация успешна: {db_user.username}")
+            logger.info(f"[OK] Локальная аутентификация успешна: {db_user.username}")
             
             # Подготавливаем данные пользователя для сессии
             user_info = {
@@ -219,7 +222,7 @@ async def login(login_data: LoginRequest):
         ldap_enabled = ad_config.get('enabled', False)
         
         if not ldap_enabled:
-            logger.warning("❌ LDAP отключен в конфигурации")
+            logger.warning("[ERROR] LDAP отключен в конфигурации")
             return LoginResponse(
                 success=False,
                 message="Неверные учетные данные. LDAP отключен."
@@ -230,14 +233,14 @@ async def login(login_data: LoginRequest):
         ldap_user_info = ad_auth.authenticate_user(login_data.username, login_data.password)
         
         if not ldap_user_info:
-            logger.warning(f"❌ LDAP аутентификация не удалась для: {login_data.username}")
+            logger.warning(f"[ERROR] LDAP аутентификация не удалась для: {login_data.username}")
             return LoginResponse(
                 success=False,
                 message="Неверные учетные данные или пользователь не найден в Active Directory"
             )
         
         # Шаг 3: LDAP аутентификация успешна - создаем/обновляем пользователя в БД
-        logger.info(f"✅ LDAP аутентификация успешна: {ldap_user_info['username']}")
+        logger.info(f"[OK] LDAP аутентификация успешна: {ldap_user_info['username']}")
         
         # Добавляем флаг LDAP пользователя
         ldap_user_info['is_ldap_user'] = True
@@ -245,7 +248,7 @@ async def login(login_data: LoginRequest):
         # Создаем или обновляем пользователя в БД
         logger.info(f"💾 Создаем/обновляем LDAP пользователя в БД: {ldap_user_info['username']}")
         db_user = chat_service.get_or_create_user(ldap_user_info['username'], ldap_user_info)
-        logger.info(f"✅ LDAP пользователь создан/обновлен в БД: {db_user.id}")
+        logger.info(f"[OK] LDAP пользователь создан/обновлен в БД: {db_user.id}")
         
         # Подготавливаем данные пользователя для сессии с ID из БД
         user_info = {
@@ -284,9 +287,9 @@ async def login(login_data: LoginRequest):
         return json_response
     
     except Exception as e:
-        logger.error(f"❌ Ошибка аутентификации: {str(e)}")
+        logger.error(f"[ERROR] Ошибка аутентификации: {str(e)}")
         import traceback
-        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        logger.error(f"[ERROR] Traceback: {traceback.format_exc()}")
         return LoginResponse(
             success=False,
             message=f"Ошибка аутентификации: {str(e)}"
@@ -325,7 +328,7 @@ async def get_current_user(request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Ошибка получения информации о пользователе: {e}")
+        logger.error(f"[ERROR] Ошибка получения информации о пользователе: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка получения информации о пользователе: {str(e)}"
@@ -357,7 +360,7 @@ async def chat(chat_message: ChatMessage, request: Request):
         
         # Используем универсальную функцию для получения пользователя
         user = await get_user_from_session(request)
-        logger.info(f"✅ Получен пользователь: {user.get('username')}")
+        logger.info(f"[OK] Получен пользователь: {user.get('username')}")
         
         user_message = chat_message.message.strip()
         
@@ -366,15 +369,15 @@ async def chat(chat_message: ChatMessage, request: Request):
         
         # Получаем или создаем пользователя в базе данных
         db_user = chat_service.get_or_create_user(user.get('username'), user)
-        logger.info(f"✅ Получен/создан пользователь БД: {db_user.id}")
+        logger.info(f"[OK] Получен/создан пользователь БД: {db_user.id}")
         
         # Получаем или создаем активную сессию
         active_session = chat_service.get_active_session(db_user.id)
         if not active_session:
             active_session = chat_service.create_chat_session(db_user.id)
-            logger.info(f"✅ Создана новая сессия: {active_session.id}")
+            logger.info(f"[OK] Создана новая сессия: {active_session.id}")
         else:
-            logger.info(f"✅ Используется существующая сессия: {active_session.id}")
+            logger.info(f"[OK] Используется существующая сессия: {active_session.id}")
         
         # Сохраняем сообщение пользователя
         logger.info("💾 Сохраняем сообщение пользователя...")
@@ -385,17 +388,17 @@ async def chat(chat_message: ChatMessage, request: Request):
             user_message,
             {'ip': request.client.host if request.client else None}
         )
-        logger.info(f"✅ Сообщение пользователя сохранено: {user_message_data['id']}")
+        logger.info(f"[OK] Сообщение пользователя сохранено: {user_message_data['id']}")
         
         # Получаем историю сообщений сессии для контекста
         logger.info("📚 Получаем историю сообщений сессии...")
         session_history = chat_service.get_session_history(active_session.id, limit=10)
-        logger.info(f"✅ Получена история: {len(session_history)} сообщений")
+        logger.info(f"[OK] Получена история: {len(session_history)} сообщений")
         
         # Получаем дополнительный контекст пользователя
         logger.info("🧠 Получаем дополнительный контекст пользователя...")
         user_additional_context = chat_service.get_user_context(db_user.id)
-        logger.info(f"✅ Контекст пользователя получен: {len(user_additional_context or '')} символов")
+        logger.info(f"[OK] Контекст пользователя получен: {len(user_additional_context or '')} символов")
         
         # Определяем, нужно ли использовать ReAct агента
         use_react = chat_message.use_react if hasattr(chat_message, 'use_react') else False
@@ -418,7 +421,7 @@ async def chat(chat_message: ChatMessage, request: Request):
         # Определяем команду и вызываем соответствующий MCP сервер
         logger.info("🤖 Обрабатываем команду с контекстом чата...")
         response = await process_command(user_message, user_context)
-        logger.info(f"✅ Получен ответ: {response[:100]}...")
+        logger.info(f"[OK] Получен ответ: {response[:100]}...")
         
         # Сохраняем ответ ассистента
         logger.info("💾 Сохраняем ответ ассистента...")
@@ -429,7 +432,7 @@ async def chat(chat_message: ChatMessage, request: Request):
             response,
             {'session_id': active_session.id}
         )
-        logger.info(f"✅ Ответ ассистента сохранен: {assistant_message_data['id']}")
+        logger.info(f"[OK] Ответ ассистента сохранен: {assistant_message_data['id']}")
         
         return ChatResponse(
             response=response,
@@ -439,9 +442,9 @@ async def chat(chat_message: ChatMessage, request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Ошибка в chat endpoint: {str(e)}")
+        logger.error(f"[ERROR] Ошибка в chat endpoint: {str(e)}")
         import traceback
-        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        logger.error(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500, 
             detail=f"Ошибка обработки сообщения: {str(e)}"
@@ -470,7 +473,7 @@ async def get_chat_sessions(request: Request):
             ]
         }
     except Exception as e:
-        logger.error(f"❌ Ошибка получения сессий: {e}")
+        logger.error(f"[ERROR] Ошибка получения сессий: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка получения сессий: {str(e)}")
 
 @app.get("/api/chat/sessions/{session_id}/history")
@@ -488,7 +491,7 @@ async def get_session_history(session_id: int, request: Request):
         history = chat_service.get_session_history(session_id)
         return {"history": history}
     except Exception as e:
-        logger.error(f"❌ Ошибка получения истории: {e}")
+        logger.error(f"[ERROR] Ошибка получения истории: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка получения истории: {str(e)}")
 
 @app.post("/api/chat/sessions/{session_id}/close")
@@ -506,7 +509,7 @@ async def close_session(session_id: int, request: Request):
         chat_service.close_session(session_id)
         return {"message": "Сессия закрыта"}
     except Exception as e:
-        logger.error(f"❌ Ошибка закрытия сессии: {e}")
+        logger.error(f"[ERROR] Ошибка закрытия сессии: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка закрытия сессии: {str(e)}")
 
 @app.get("/api/chat/stats")
@@ -518,7 +521,7 @@ async def get_user_stats(request: Request):
         stats = chat_service.get_user_stats(db_user.id)
         return stats
     except Exception as e:
-        logger.error(f"❌ Ошибка получения статистики: {e}")
+        logger.error(f"[ERROR] Ошибка получения статистики: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка получения статистики: {str(e)}")
 
 # --- Управление контекстом пользователя ---
@@ -551,7 +554,7 @@ async def get_user_context(request: Request):
         logger.info(f"🔍 Отладка контекста пользователя: user_info={user_info}, user_id={user_id}")
         
         if not user_id:
-            logger.error(f"❌ ID пользователя не найден в сессии: {user_info}")
+            logger.error(f"[ERROR] ID пользователя не найден в сессии: {user_info}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="ID пользователя не найден в сессии"
@@ -569,7 +572,7 @@ async def get_user_context(request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Ошибка получения контекста пользователя: {e}")
+        logger.error(f"[ERROR] Ошибка получения контекста пользователя: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка получения контекста: {str(e)}"
@@ -632,7 +635,7 @@ async def save_user_context(request: Request, context_data: dict):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Ошибка сохранения контекста пользователя: {e}")
+        logger.error(f"[ERROR] Ошибка сохранения контекста пользователя: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка сохранения контекста: {str(e)}"
@@ -695,7 +698,7 @@ async def update_user_context(request: Request, context_data: dict):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Ошибка обновления контекста пользователя: {e}")
+        logger.error(f"[ERROR] Ошибка обновления контекста пользователя: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка обновления контекста: {str(e)}"
@@ -750,7 +753,7 @@ async def clear_user_context(request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Ошибка очистки контекста пользователя: {e}")
+        logger.error(f"[ERROR] Ошибка очистки контекста пользователя: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка очистки контекста: {str(e)}"
@@ -803,7 +806,7 @@ async def get_admin_info():
         
         return admin_info
     except Exception as e:
-        logger.error(f"❌ Ошибка получения информации админа: {e}")
+        logger.error(f"[ERROR] Ошибка получения информации админа: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка получения информации: {str(e)}")
 
 @app.get("/api/admin/config")
@@ -839,10 +842,10 @@ async def get_admin_config():
                             'config': server_config
                         }
                         
-                        logger.info(f"✅ Настройки сервера {server_name} загружены")
+                        logger.info(f"[OK] Настройки сервера {server_name} загружены")
                     
                 except Exception as e:
-                    logger.warning(f"⚠️ Не удалось загрузить настройки сервера {server_name}: {e}")
+                    logger.warning(f"[WARN] Не удалось загрузить настройки сервера {server_name}: {e}")
                     # Добавляем базовые настройки
                     mcp_servers_config[server_name] = {
                         'name': server_name,
@@ -856,7 +859,7 @@ async def get_admin_config():
                     }
             
         except Exception as e:
-            logger.error(f"❌ Ошибка получения настроек MCP серверов: {e}")
+            logger.error(f"[ERROR] Ошибка получения настроек MCP серверов: {e}")
         
         # Возвращаем полную конфигурацию
         return {
@@ -865,7 +868,7 @@ async def get_admin_config():
         }
         
     except Exception as e:
-        logger.error(f"❌ Ошибка получения конфигурации админа: {e}")
+        logger.error(f"[ERROR] Ошибка получения конфигурации админа: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка получения конфигурации: {str(e)}")
 
 @app.post("/api/admin/config/update", response_model=ConfigUpdateResponse)
@@ -892,7 +895,7 @@ async def update_config(config_request: ConfigUpdateRequest):
                 message="Ошибка обновления конфигурации"
             )
     except Exception as e:
-        logger.error(f"❌ Ошибка обновления конфигурации: {e}")
+        logger.error(f"[ERROR] Ошибка обновления конфигурации: {e}")
         return ConfigUpdateResponse(
             success=False,
             message=f"Ошибка обновления конфигурации: {str(e)}"
@@ -908,7 +911,7 @@ async def test_connection(test_request: ConnectionTestRequest):
             message=result["message"]
         )
     except Exception as e:
-        logger.error(f"❌ Ошибка тестирования подключения: {e}")
+        logger.error(f"[ERROR] Ошибка тестирования подключения: {e}")
         return ConnectionTestResponse(
             success=False,
             message=f"Ошибка тестирования: {str(e)}"
@@ -935,7 +938,7 @@ async def analyze_code(analysis_request: CodeAnalysisRequest, request: Request):
         )
         
     except Exception as e:
-        logger.error(f"❌ Ошибка анализа кода: {e}")
+        logger.error(f"[ERROR] Ошибка анализа кода: {e}")
         return CodeAnalysisResponse(
             success=False,
             message=f"Ошибка анализа кода: {str(e)}"
@@ -955,7 +958,7 @@ async def get_services_status():
         if (_services_status_cache is None or 
             current_time - _services_status_cache_time > _services_status_cache_interval):
             
-            logger.debug("🔄 Обновляем кэш статуса сервисов")
+            logger.debug("[RELOAD] Обновляем кэш статуса сервисов")
             
             # Используем кэшированные серверы из mcp_client
             mcp_services = {}
@@ -996,14 +999,14 @@ async def get_services_status():
             )
             _services_status_cache_time = current_time
             
-            logger.debug("✅ Кэш статуса сервисов обновлен")
+            logger.debug("[OK] Кэш статуса сервисов обновлен")
         else:
-            logger.debug("🔄 Используем кэшированный статус сервисов")
+            logger.debug("[RELOAD] Используем кэшированный статус сервисов")
         
         return _services_status_cache
         
     except Exception as e:
-        logger.error(f"❌ Ошибка получения статуса сервисов: {e}")
+        logger.error(f"[ERROR] Ошибка получения статуса сервисов: {e}")
         return HealthResponse(
             status="unhealthy",
             services={},
@@ -1015,7 +1018,7 @@ def invalidate_services_status_cache():
     global _services_status_cache, _services_status_cache_time
     _services_status_cache = None
     _services_status_cache_time = 0
-    logger.info("🔄 Кэш статуса сервисов сброшен")
+    logger.info("[RELOAD] Кэш статуса сервисов сброшен")
 
 # --- LLM провайдеры ---
 
@@ -1031,7 +1034,7 @@ async def get_llm_providers():
             providers=providers
         )
     except Exception as e:
-        logger.error(f"❌ Ошибка получения LLM провайдеров: {e}")
+        logger.error(f"[ERROR] Ошибка получения LLM провайдеров: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка получения провайдеров: {str(e)}")
 
 @app.post("/api/llm/providers/test", response_model=LLMProviderTestResponse)
@@ -1055,7 +1058,7 @@ async def test_llm_provider(test_request: LLMProviderTestRequest):
         )
         
     except Exception as e:
-        logger.error(f"❌ Ошибка тестирования LLM провайдера: {e}")
+        logger.error(f"[ERROR] Ошибка тестирования LLM провайдера: {e}")
         return LLMProviderTestResponse(
             success=False,
             message=f"Ошибка тестирования: {str(e)}",
@@ -1071,7 +1074,7 @@ def reinitialize_system():
     global llm_client, mcp_client, config_manager
     
     try:
-        print("🔄 Переинициализация системы...")
+        print("[RELOAD] Переинициализация системы...")
         
         # Сбрасываем кэш статуса сервисов
         invalidate_services_status_cache()
@@ -1095,16 +1098,16 @@ def reinitialize_system():
                 if server:
                     server.reconnect()
             except Exception as e:
-                logger.warning(f"⚠️ Не удалось переподключить сервер {server_name}: {e}")
+                logger.warning(f"[WARN] Не удалось переподключить сервер {server_name}: {e}")
         
         # Переинициализация аутентификации
         ad_auth.reconnect()
         session_manager.reconnect()
         
-        print("✅ Система переинициализирована")
+        print("[OK] Система переинициализирована")
         
     except Exception as e:
-        print(f"❌ Ошибка переинициализации: {e}")
+        print(f"[ERROR] Ошибка переинициализации: {e}")
 
 async def get_user_from_session(request: Request) -> dict:
     """Получает информацию о пользователе из сессии (универсальный механизм)"""
@@ -1141,7 +1144,7 @@ async def process_command(message: str, user_context: dict = None) -> str:
         response = await mcp_client.process_message_with_llm(message, user_context)
         return response
     except Exception as e:
-        logger.error(f"❌ Ошибка обработки команды: {e}")
+        logger.error(f"[ERROR] Ошибка обработки команды: {e}")
         return f"Извините, произошла ошибка при обработке команды: {str(e)}"
 
 # ============================================================================
@@ -1190,7 +1193,7 @@ async def get_chat_sessions(request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Ошибка получения сессий чата: {e}")
+        logger.error(f"[ERROR] Ошибка получения сессий чата: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка получения сессий чата: {str(e)}"
@@ -1217,7 +1220,7 @@ async def create_chat_session(request: Request, session_data: dict):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Ошибка создания сессии чата: {e}")
+        logger.error(f"[ERROR] Ошибка создания сессии чата: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка создания сессии чата: {str(e)}"
@@ -1248,7 +1251,7 @@ async def get_session_messages(session_id: int, request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Ошибка получения сообщений сессии: {e}")
+        logger.error(f"[ERROR] Ошибка получения сообщений сессии: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка получения сообщений сессии: {str(e)}"
@@ -1296,7 +1299,7 @@ async def add_chat_message(request: Request, message_data: dict):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Ошибка добавления сообщения: {e}")
+        logger.error(f"[ERROR] Ошибка добавления сообщения: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Ошибка добавления сообщения: {str(e)}"

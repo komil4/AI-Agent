@@ -33,8 +33,17 @@ class BaseMCPServer(ABC):
         self._last_connection_check = 0
         self._connection_check_interval = 30  # секунд
         
-        self._load_config()
-        self._connect()
+        # Инициализация будет выполнена через initialize()
+    
+    async def initialize(self):
+        """Асинхронная инициализация сервера"""
+        try:
+            self._load_config()
+            self._connect()
+            logger.info(f"[OK] Сервер {self.server_name} инициализирован")
+        except Exception as e:
+            logger.error(f"[ERROR] Ошибка инициализации сервера {self.server_name}: {e}")
+            raise
     
     @abstractmethod
     def _get_description(self) -> str:
@@ -61,7 +70,7 @@ class BaseMCPServer(ABC):
             service_config = self.config_manager.get_service_config(self.server_name)
             return service_config.get('enabled', False)
         except Exception as e:
-            logger.error(f"❌ Ошибка проверки статуса сервера {self.server_name}: {e}")
+            logger.error(f"[ERROR] Ошибка проверки статуса сервера {self.server_name}: {e}")
             return False
     
     def test_connection(self) -> bool:
@@ -78,14 +87,14 @@ class BaseMCPServer(ABC):
                 self._last_connection_check = current_time
                 
                 if self._connection_status:
-                    logger.debug(f"✅ Подключение к {self.server_name} проверено: OK")
+                    logger.debug(f"[OK] Подключение к {self.server_name} проверено: OK")
                 else:
-                    logger.debug(f"❌ Подключение к {self.server_name} проверено: FAILED")
+                    logger.debug(f"[ERROR] Подключение к {self.server_name} проверено: FAILED")
             
             return self._connection_status
             
         except Exception as e:
-            logger.error(f"❌ Ошибка тестирования подключения {self.server_name}: {e}")
+            logger.error(f"[ERROR] Ошибка тестирования подключения {self.server_name}: {e}")
             self._connection_status = False
             self._last_connection_check = time.time()
             return False
@@ -98,7 +107,7 @@ class BaseMCPServer(ABC):
     def reconnect(self):
         """Переподключается к сервису"""
         try:
-            logger.info(f"🔄 Переподключение к {self.server_name}...")
+            logger.info(f"[RELOAD] Переподключение к {self.server_name}...")
             self._load_config()
             self._connect()
             
@@ -106,9 +115,9 @@ class BaseMCPServer(ABC):
             self._connection_status = None
             self._last_connection_check = 0
             
-            logger.info(f"✅ Переподключение к {self.server_name} завершено")
+            logger.info(f"[OK] Переподключение к {self.server_name} завершено")
         except Exception as e:
-            logger.error(f"❌ Ошибка переподключения к {self.server_name}: {e}")
+            logger.error(f"[ERROR] Ошибка переподключения к {self.server_name}: {e}")
             # Помечаем как недоступный
             self._connection_status = False
             self._last_connection_check = time.time()
@@ -117,7 +126,7 @@ class BaseMCPServer(ABC):
         """Принудительно сбрасывает кэш подключения"""
         self._connection_status = None
         self._last_connection_check = 0
-        logger.debug(f"🔄 Кэш подключения {self.server_name} сброшен")
+        logger.debug(f"[RELOAD] Кэш подключения {self.server_name} сброшен")
     
     def get_server_info(self) -> Dict[str, Any]:
         """Возвращает информацию о сервере"""
@@ -161,7 +170,7 @@ class BaseMCPServer(ABC):
                 }
                 
         except Exception as e:
-            logger.error(f"❌ Ошибка получения статуса здоровья {self.server_name}: {e}")
+            logger.error(f"[ERROR] Ошибка получения статуса здоровья {self.server_name}: {e}")
             return {
                 'status': 'unhealthy',
                 'provider': self.server_name,
@@ -172,21 +181,29 @@ class BaseMCPServer(ABC):
         """Возвращает список доступных инструментов сервера"""
         try:
             if not self.is_enabled():
-                logger.debug(f"🔧 Сервер {self.server_name} отключен, инструменты недоступны")
+                logger.debug(f"[TOOLS] Сервер {self.server_name} отключен, инструменты недоступны")
                 return []
             
             # Получаем инструменты через _get_tools (должен быть реализован в наследниках)
             if hasattr(self, '_get_tools') and callable(self._get_tools):
                 tools = self._get_tools()
-                logger.debug(f"🔧 Получено {len(tools)} инструментов от {self.server_name}")
+                logger.debug(f"[TOOLS] Получено {len(tools)} инструментов от {self.server_name}")
                 return tools
             else:
-                logger.warning(f"⚠️ Сервер {self.server_name} не реализует метод _get_tools")
+                logger.warning(f"[WARN] Сервер {self.server_name} не реализует метод _get_tools")
                 return []
                 
         except Exception as e:
-            logger.error(f"❌ Ошибка получения инструментов от {self.server_name}: {e}")
+            logger.error(f"[ERROR] Ошибка получения инструментов от {self.server_name}: {e}")
             return []
+    
+    def get_tools_info(self) -> List[Dict[str, Any]]:
+        """Возвращает информацию об инструментах сервера (алиас для get_tools)"""
+        return self.get_tools()
+    
+    def get_info(self) -> Dict[str, Any]:
+        """Возвращает информацию о сервере"""
+        return self.get_server_info()
     
     def get_admin_settings(self) -> Dict[str, Any]:
         """
@@ -213,7 +230,7 @@ class BaseMCPServer(ABC):
             return settings
             
         except Exception as e:
-            logger.error(f"❌ Ошибка получения настроек админ-панели: {e}")
+            logger.error(f"[ERROR] Ошибка получения настроек админ-панели: {e}")
             return {
                 'name': 'unknown',
                 'display_name': 'Unknown MCP',
@@ -257,7 +274,7 @@ class BaseMCPServer(ABC):
             return self._call_tool_impl(tool_name, arguments)
             
         except Exception as e:
-            logger.error(f"❌ Ошибка вызова инструмента {tool_name}: {e}")
+            logger.error(f"[ERROR] Ошибка вызова инструмента {tool_name}: {e}")
             return format_tool_response(False, f"Ошибка выполнения инструмента: {str(e)}")
     
     def _call_tool_impl(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
