@@ -1163,19 +1163,19 @@
                 hideTypingIndicator();
                 if (data.status === 'success') {
                     // Добавляем ответ бота в сессию
-                    addMessageToSession(data.response, 'bot');
-                    addMessage(data.response, 'bot');
+                    addMessageToSession(data.response, 'assistant');
+                    addMessage(data.response, 'assistant');
                 } else {
                     const errorMsg = '❌ Ошибка: ' + (data.detail || data.error);
-                    addMessageToSession(errorMsg, 'bot');
-                    addMessage(errorMsg, 'bot');
+                    addMessageToSession(errorMsg, 'assistant');
+                    addMessage(errorMsg, 'assistant');
                 }
             })
             .catch(error => {
                 hideTypingIndicator();
                 const errorMsg = '❌ Ошибка соединения: ' + error.message;
-                addMessageToSession(errorMsg, 'bot');
-                addMessage(errorMsg, 'bot');
+                addMessageToSession(errorMsg, 'assistant');
+                addMessage(errorMsg, 'assistant');
             });
         }
 
@@ -1226,8 +1226,8 @@
             messageDiv.className = `message ${sender}-message`;
             
             const icon = sender === 'user' ? 'fas fa-user' : 'fas fa-robot';
-            // Преобразуем URL в кликабельные ссылки и переносы строк только для сообщений бота
-            const processedText = sender === 'bot' ? makeLinksClickable(text) : text.replace(/\n/g, '<br>');
+            // Преобразуем URL в кликабельные ссылки и переносы строк только для сообщений ассистента
+            const processedText = sender === 'assistant' ? makeLinksClickable(text) : text.replace(/\n/g, '<br>');
             messageDiv.innerHTML = `<strong><i class="${icon}"></i> ${sender === 'user' ? 'Вы' : 'AI Ассистент'}:</strong><br>${processedText}`;
             
             chatContainer.appendChild(messageDiv);
@@ -1446,7 +1446,7 @@
 
 Выберите популярную команду из боковой панели или просто напишите, что вам нужно!`;
             
-            addMessageToChat(welcomeText, 'bot', false);
+            addMessageToChat(welcomeText, 'assistant', false);
         }
         
         // Создание новой сессии чата
