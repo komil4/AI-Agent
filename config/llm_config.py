@@ -97,9 +97,9 @@ class LLMConfigManager:
                 max_tokens=int(ollama_config.get('max_tokens', os.getenv('OLLAMA_MAX_TOKENS', '4000'))),
                 timeout=int(ollama_config.get('timeout', os.getenv('OLLAMA_TIMEOUT', '30')))
             )
-            print(f"✅ Ollama провайдер загружен: {ollama_config.get('model', 'llama3.1:8b')}")
+            print(f"[OK] Ollama провайдер загружен: {ollama_config.get('model', 'llama3.1:8b')}")
         else:
-            print("⚠️ Ollama провайдер отключен в конфигурации")
+            print("[WARN] Ollama провайдер отключен в конфигурации")
         
         # Локальная конфигурация
         local_config = providers_config.get('local', {})
@@ -126,9 +126,9 @@ class LLMConfigManager:
                 max_tokens=int(neurolink_config.get('max_tokens', '2048')),
                 timeout=int(neurolink_config.get('timeout', '30'))
             )
-            print(f"✅ Neurolink провайдер загружен: {neurolink_config.get('model', 'google/gemma-3-27b-it')}")
+            print(f"[OK] Neurolink провайдер загружен: {neurolink_config.get('model', 'google/gemma-3-27b-it')}")
         else:
-            print("⚠️ Neurolink провайдер отключен в конфигурации")
+            print("[WARN] Neurolink провайдер отключен в конфигурации")
     
     def get_config(self, provider: LLMProvider) -> Optional[LLMConfig]:
         """Получает конфигурацию для провайдера"""
