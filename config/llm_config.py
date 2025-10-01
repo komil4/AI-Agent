@@ -15,6 +15,7 @@ class LLMProvider(Enum):
     GOOGLE = "google"
     OLLAMA = "ollama"
     LOCAL = "local"
+    NEUROLINK = "neurolink"
 
 @dataclass
 class LLMConfig:
@@ -111,6 +112,23 @@ class LLMConfigManager:
                 max_tokens=int(local_config.get('max_tokens', os.getenv('LOCAL_MAX_TOKENS', '4000'))),
                 timeout=int(local_config.get('timeout', os.getenv('LOCAL_TIMEOUT', '30')))
             )
+        
+        # Neurolink конфигурация - всегда включаем по умолчанию
+        neurolink_config = providers_config.get('neurolink', {})
+        # Neurolink включен по умолчанию, если не отключен явно
+        if neurolink_config.get('enabled', True):
+            self.configs[LLMProvider.NEUROLINK] = LLMConfig(
+                provider=LLMProvider.NEUROLINK,
+                model=neurolink_config.get('model', 'google/gemma-3-27b-it'),
+                api_key=neurolink_config.get('api_key', 'ARjgZphys9tBWYnnJl5UdnOeAubUCwzaAhEpRnFi1yE'),
+                base_url=neurolink_config.get('base_url', 'http://neurolink.iek.local:8004/v1/chat/completions'),
+                temperature=float(neurolink_config.get('temperature', '0.15')),
+                max_tokens=int(neurolink_config.get('max_tokens', '2048')),
+                timeout=int(neurolink_config.get('timeout', '30'))
+            )
+            print(f"✅ Neurolink провайдер загружен: {neurolink_config.get('model', 'google/gemma-3-27b-it')}")
+        else:
+            print("⚠️ Neurolink провайдер отключен в конфигурации")
     
     def get_config(self, provider: LLMProvider) -> Optional[LLMConfig]:
         """Получает конфигурацию для провайдера"""
@@ -140,6 +158,7 @@ class LLMConfigManager:
             else:
                 # Если провайдер не доступен, используем приоритетный порядок
                 priority_order = [
+                    LLMProvider.NEUROLINK,
                     LLMProvider.OPENAI,
                     LLMProvider.ANTHROPIC,
                     LLMProvider.GOOGLE,
@@ -156,6 +175,7 @@ class LLMConfigManager:
         except ValueError:
             # Если провайдер не найден, используем приоритетный порядок
             priority_order = [
+                LLMProvider.NEUROLINK,
                 LLMProvider.OPENAI,
                 LLMProvider.ANTHROPIC,
                 LLMProvider.GOOGLE,

@@ -10,6 +10,7 @@ from llm_providers.openai_provider import OpenAIProvider
 from llm_providers.anthropic_provider import AnthropicProvider
 from llm_providers.google_provider import GoogleProvider
 from llm_providers.ollama_provider import OllamaProvider
+from llm_providers.neurolink_provider import NeurolinkProvider
 
 class LLMProviderFactory:
     """Фабрика для создания LLM провайдеров"""
@@ -19,6 +20,7 @@ class LLMProviderFactory:
         LLMProvider.ANTHROPIC: AnthropicProvider,
         LLMProvider.GOOGLE: GoogleProvider,
         LLMProvider.OLLAMA: OllamaProvider,
+        LLMProvider.NEUROLINK: NeurolinkProvider,
     }
     
     @classmethod
