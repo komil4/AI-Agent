@@ -298,8 +298,8 @@ class IntelligentToolProcessor:
                                     ))
             
             # Дополнительно извлекаем параметры с помощью регулярных выражений
-            regex_params = self._extract_params_with_regex(full_context)
-            context_params.extend(regex_params)
+            #regex_params = self._extract_params_with_regex(full_context)
+            #context_params.extend(regex_params)
             
             # Дополнительная логика: если найдены инструменты, но не все их параметры извлечены,
             # попробуем извлечь недостающие параметры из контекста
