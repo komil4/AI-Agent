@@ -501,8 +501,20 @@ class IntelligentToolProcessor:
         if not context_params:
             return None
         
+        # Фильтруем параметры, исключая те, что имеют значение None
+        valid_context_params = [
+            param for param in context_params 
+            if param.value is not None and param.value.lower() not in ['null', 'none', '']
+        ]
+        
+        if not valid_context_params:
+            logger.info("🔍 Нет валидных параметров для выбора инструмента")
+            return None
+        
         # Получаем названия найденных параметров
-        found_param_names = {param.name for param in context_params}
+        found_param_names = {param.name for param in valid_context_params}
+        
+        logger.info(f"🔍 Выбор инструмента по параметрам: {found_param_names}")
         
         best_tool = None
         best_score = 0
@@ -510,16 +522,24 @@ class IntelligentToolProcessor:
         for tool in available_tools:
             tool_name = tool.get('name', '')
             tool_description = tool.get('description', '')
-            required_params = tool.get('inputSchema', {}).get('properties', {}).get('required', [])
+            input_schema = tool.get('inputSchema', {})
+            all_params = set(input_schema.get('properties', {}).keys())
+            required_params = set(input_schema.get('required', []))
             
-            # Подсчитываем количество совпадающих параметров
-            matching_params = len(set(required_params) & found_param_names)
+            # Подсчитываем количество совпадающих параметров (все параметры, не только обязательные)
+            matching_all_params = len(all_params & found_param_names)
+            matching_required_params = len(required_params & found_param_names)
             
             # Проверяем соответствие описания задаче
             description_match = self._check_description_match(tool_description, user_message)
             
-            # Вычисляем общий балл
-            score = matching_params * 2 + (1 if description_match else 0)
+            # Вычисляем общий балл с приоритетом обязательных параметров
+            # Обязательные параметры получают больший вес
+            score = (matching_required_params * 3) + (matching_all_params * 1) + (1 if description_match else 0)
+            
+            logger.debug(f"🔍 [{tool_name}] Обязательные: {matching_required_params}/{len(required_params)}, "
+                        f"Всего: {matching_all_params}/{len(all_params)}, "
+                        f"Описание: {description_match}, Балл: {score}")
             
             if score > best_score:
                 best_score = score
@@ -709,7 +729,19 @@ class IntelligentToolProcessor:
             Подготовленные параметры
         """
         tool_params = {}
-        required_params = tool.get('inputSchema', {}).get('properties', {}).get('required', [])
+        input_schema = tool.get('inputSchema', {})
+        all_params = set(input_schema.get('properties', {}).keys())
+        required_params = set(input_schema.get('required', []))
+        
+        # Фильтруем параметры, исключая те, что имеют значение None
+        valid_context_params = [
+            param for param in context_params 
+            if param.value is not None and param.value.lower() not in ['null', 'none', '']
+        ]
+        
+        logger.info(f"🔧 Подготовка параметров для {tool.get('name', '')}: "
+                   f"всего параметров {len(all_params)}, обязательных {len(required_params)}, "
+                   f"валидных из контекста {len(valid_context_params)}")
         
         # Маппинг параметров из контекста
         param_mapping = {
@@ -721,13 +753,13 @@ class IntelligentToolProcessor:
             'commit_hash': ['commit', 'hash', 'commit_id']
         }
         
-        # Заполняем параметры из контекста
-        for param_name in required_params:
+        # Заполняем ВСЕ параметры из контекста (не только обязательные)
+        for param_name in all_params:
             best_param = None
             best_confidence = 0.0
             
             # Ищем подходящий параметр в контексте
-            for context_param in context_params:
+            for context_param in valid_context_params:
                 if context_param.name in param_mapping.get(param_name, [param_name]):
                     if context_param.confidence > best_confidence:
                         best_param = context_param
@@ -735,11 +767,16 @@ class IntelligentToolProcessor:
             
             if best_param and best_confidence > 0.5:
                 tool_params[param_name] = best_param.value
-            else:
-                # Если параметр не найден, пытаемся извлечь из сообщения
+                param_type = "обязательный" if param_name in required_params else "опциональный"
+                logger.info(f"✅ [{param_type}] Параметр '{param_name}' = '{best_param.value}' (confidence: {best_confidence})")
+            elif param_name in required_params:
+                # Если обязательный параметр не найден, пытаемся извлечь из сообщения
                 extracted_value = await self._extract_param_from_message(param_name, user_message)
                 if extracted_value:
                     tool_params[param_name] = extracted_value
+                    logger.info(f"✅ [обязательный] Параметр '{param_name}' = '{extracted_value}' извлечен из сообщения")
+                else:
+                    logger.warning(f"⚠️ [обязательный] Параметр '{param_name}' не найден и не может быть извлечен")
         
         logger.info(f"✅ Подготовлены параметры для {tool.get('name')}: {tool_params}")
         return tool_params
