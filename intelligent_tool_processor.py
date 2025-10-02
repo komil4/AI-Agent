@@ -155,12 +155,13 @@ class IntelligentToolProcessor:
 
 ЖЕСТКИЕ ПРАВИЛА:
 1. ИСПОЛЬЗУЙ ТОЧНЫЕ НАЗВАНИЯ ИНСТРУМЕНТОВ, как в примере ниже. НЕ изменяй и не творчески переименовывай инструменты.
-2. ИЗВЛЕКИ ВСЕ параметры, даже если они неявно упомянуты в запросе.
+2. ИЗВЛЕКИ ВСЕ параметры (как обязательные, так и опциональные), даже если они неявно упомянуты в запросе.
 3. ДЛЯ КАЖДОГО инструмента продублируй параметры под именем, которое ОЖИДАЕТ этот конкретный инструмент.
-4. Если параметр для инструмента не указан, явно укажи `null`.
+4. Если параметр для инструмента не указан явно, попробуй вывести его из контекста или укажи `null`.
 5. Формат вывода ТОЛЬКО JSON, как в примере.
+6. ВАЖНО: Извлекай ВСЕ параметры из списка, не только обязательные!
 
-СПИСОК ИНСТРУМЕНТОВ И ИХ ОЖИДАЕМЫХ ПАРАМЕТРОВ:
+СПИСОК ИНСТРУМЕНТОВ И ИХ ВСЕХ ПАРАМЕТРОВ:
 {grouped_tools_info}
 
 ФОРМАТ ОТВЕТА:
@@ -198,14 +199,22 @@ class IntelligentToolProcessor:
                     logger.info(f"🔍 Найденные параметры: {list(parameters.keys()) if isinstance(parameters, dict) else parameters}")
                     logger.info(f"🛠️ Подходящие инструменты: {found_tools}")
 
-                    # Получаем все допустимые параметры из всех инструментов
+                    # Получаем ВСЕ параметры из всех инструментов (не только обязательные)
                     all_valid_params = set()
-                    tool_param_map = {}
+                    tool_all_param_map = {}
+                    tool_required_param_map = {}
+                    
                     for tool in available_tools:
                         tool_name = tool.get('name', '')
-                        tool_params = tool.get('inputSchema', {}).get('properties', {}).get('required', [])
-                        all_valid_params.update(tool_params)
-                        tool_param_map[tool_name] = set(tool_params)
+                        input_schema = tool.get('inputSchema', {})
+                        properties = input_schema.get('properties', {})
+                        required_params = input_schema.get('required', [])
+                        
+                        # Собираем ВСЕ параметры инструмента
+                        all_tool_params = set(properties.keys())
+                        all_valid_params.update(all_tool_params)
+                        tool_all_param_map[tool_name] = all_tool_params
+                        tool_required_param_map[tool_name] = set(required_params)
 
                     # Проверяем вложенность структуры параметров
                     if isinstance(parameters, dict):
@@ -213,7 +222,7 @@ class IntelligentToolProcessor:
                         # или структура: {tool_name: {param: value, ...}, ...} (новый вложенный формат)
                         is_nested = False
                         # Проверяем, если ключи parameters совпадают с именами инструментов
-                        if all(isinstance(k, str) and k in tool_param_map for k in parameters.keys()):
+                        if all(isinstance(k, str) and k in tool_required_param_map for k in parameters.keys()):
                             # Проверяем, что значения - dict (т.е. вложенная структура)
                             if all(isinstance(v, dict) for v in parameters.values()):
                                 is_nested = True
@@ -221,29 +230,44 @@ class IntelligentToolProcessor:
                         if is_nested:
                             # Новый вложенный формат: {tool_name: {param: value, ...}, ...}
                             for tool_name, param_dict in parameters.items():
-                                valid_params = tool_param_map.get(tool_name, set())
+                                all_tool_params = tool_all_param_map.get(tool_name, set())
+                                required_params = tool_required_param_map.get(tool_name, set())
+                                
                                 for param_name, param_value in param_dict.items():
-                                    if param_name in valid_params:
+                                    if param_name in all_tool_params:
+                                        # Определяем приоритет: обязательные параметры получают более высокий confidence
+                                        confidence = 0.95 if param_name in required_params else 0.85
+                                        
                                         context_params.append(ContextParameter(
                                             name=param_name,
                                             value=str(param_value),
                                             source='llm_extraction',
-                                            confidence=0.9
+                                            confidence=confidence
                                         ))
-                                        logger.info(f"✅ [{tool_name}] Параметр '{param_name}' = '{param_value}' добавлен")
+                                        param_type = "обязательный" if param_name in required_params else "опциональный"
+                                        logger.info(f"✅ [{tool_name}] {param_type} параметр '{param_name}' = '{param_value}' добавлен")
                                     else:
                                         logger.warning(f"⚠️ [{tool_name}] LLM выдумал параметр '{param_name}' - не найден в инструменте")
                         else:
                             # Старый формат: {param: value, ...}
                             for param_name, param_value in parameters.items():
                                 if param_name in all_valid_params:
+                                    # Определяем, к какому инструменту принадлежит параметр
+                                    param_tools = [tool for tool, params in tool_all_param_map.items() if param_name in params]
+                                    is_required = any(param_name in tool_required_param_map.get(tool, set()) for tool in param_tools)
+                                    
+                                    # Определяем confidence на основе того, обязательный ли параметр
+                                    confidence = 0.95 if is_required else 0.85
+                                    
                                     context_params.append(ContextParameter(
                                         name=param_name,
                                         value=str(param_value),
                                         source='llm_extraction',
-                                        confidence=0.9
+                                        confidence=confidence
                                     ))
-                                    logger.info(f"✅ Параметр '{param_name}' = '{param_value}' добавлен")
+                                    param_type = "обязательный" if is_required else "опциональный"
+                                    tools_str = ", ".join(param_tools) if param_tools else "неизвестный инструмент"
+                                    logger.info(f"✅ {param_type} параметр '{param_name}' = '{param_value}' добавлен (инструменты: {tools_str})")
                                 else:
                                     logger.warning(f"⚠️ LLM выдумал параметр '{param_name}' - не найден в инструментах")
                     else:
@@ -277,12 +301,123 @@ class IntelligentToolProcessor:
             regex_params = self._extract_params_with_regex(full_context)
             context_params.extend(regex_params)
             
+            # Дополнительная логика: если найдены инструменты, но не все их параметры извлечены,
+            # попробуем извлечь недостающие параметры из контекста
+            if found_tools and isinstance(parameters, dict):
+                self._extract_missing_optional_params(
+                    found_tools, parameters, tool_all_param_map, tool_required_param_map, 
+                    full_context, context_params
+                )
+            
             logger.info(f"✅ Извлечено {len(context_params)} параметров из контекста")
             return context_params
             
         except Exception as e:
             logger.error(f"❌ Ошибка извлечения параметров: {e}")
             return []
+            
+    def _extract_missing_optional_params(
+        self, 
+        found_tools: List[str], 
+        extracted_params: Dict[str, Any], 
+        tool_all_param_map: Dict[str, set],
+        tool_required_param_map: Dict[str, set],
+        context: str,
+        context_params: List[ContextParameter]
+    ):
+        """
+        Извлекает недостающие опциональные параметры из контекста
+        
+        Args:
+            found_tools: Список найденных инструментов
+            extracted_params: Уже извлеченные параметры
+            tool_all_param_map: Карта всех параметров по инструментам
+            tool_required_param_map: Карта обязательных параметров по инструментам
+            context: Контекст для поиска
+            context_params: Список параметров для дополнения
+        """
+        try:
+            # Получаем уже извлеченные имена параметров
+            extracted_param_names = set()
+            for param in context_params:
+                extracted_param_names.add(param.name)
+            
+            # Для каждого найденного инструмента проверяем недостающие параметры
+            for tool_name in found_tools:
+                all_tool_params = tool_all_param_map.get(tool_name, set())
+                required_params = tool_required_param_map.get(tool_name, set())
+                
+                # Находим недостающие опциональные параметры
+                missing_optional = all_tool_params - extracted_param_names - required_params
+                
+                if missing_optional:
+                    logger.info(f"🔍 [{tool_name}] Ищем недостающие опциональные параметры: {missing_optional}")
+                    
+                    # Пытаемся извлечь недостающие параметры из контекста
+                    for param_name in missing_optional:
+                        # Простой поиск по ключевым словам в контексте
+                        param_value = self._extract_param_from_context(param_name, context)
+                        if param_value:
+                            context_params.append(ContextParameter(
+                                name=param_name,
+                                value=param_value,
+                                source='context_inference',
+                                confidence=0.7
+                            ))
+                            logger.info(f"✅ [{tool_name}] Опциональный параметр '{param_name}' = '{param_value}' извлечен из контекста")
+                        
+        except Exception as e:
+            logger.error(f"❌ Ошибка извлечения недостающих параметров: {e}")
+    
+    def _extract_param_from_context(self, param_name: str, context: str) -> Optional[str]:
+        """
+        Извлекает значение параметра из контекста на основе его имени
+        
+        Args:
+            param_name: Имя параметра
+            context: Контекст для поиска
+            
+        Returns:
+            Найденное значение или None
+        """
+        try:
+            context_lower = context.lower()
+            param_lower = param_name.lower()
+            
+            # Простые правила извлечения на основе имени параметра
+            if 'query' in param_lower or 'search' in param_lower:
+                # Для параметров поиска ищем ключевые слова
+                words = context.split()
+                if len(words) > 2:
+                    # Берем несколько слов как поисковый запрос
+                    return ' '.join(words[:3])
+                    
+            elif 'limit' in param_lower or 'count' in param_lower:
+                # Для лимитов ищем числа
+                import re
+                numbers = re.findall(r'\b\d+\b', context)
+                if numbers:
+                    return numbers[0]
+                    
+            elif 'sort' in param_lower or 'order' in param_lower:
+                # Для сортировки ищем ключевые слова
+                if 'asc' in context_lower or 'возраста' in context_lower:
+                    return 'asc'
+                elif 'desc' in context_lower or 'убыва' in context_lower:
+                    return 'desc'
+                    
+            elif 'filter' in param_lower:
+                # Для фильтров пытаемся найти условия
+                if 'active' in context_lower or 'актив' in context_lower:
+                    return 'active'
+                elif 'inactive' in context_lower or 'неактив' in context_lower:
+                    return 'inactive'
+                    
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Ошибка извлечения параметра {param_name}: {e}")
+            return None
     
     def _extract_params_with_regex(self, text: str) -> List[ContextParameter]:
         """Извлекает параметры с помощью регулярных выражений"""
