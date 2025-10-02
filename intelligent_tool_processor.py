@@ -137,10 +137,11 @@ class IntelligentToolProcessor:
                 server = tool.get('server', 'Без сервера')
                 tool_name = tool.get('name', '')
                 tool_description = tool.get('description', '')
-                required_params = tool.get('inputSchema', {}).get('properties', {}).get('required', [])
+                # Получаем все параметры, а не только обязательные
+                all_params = list(tool.get('inputSchema', {}).get('properties', {}).keys())
                 
                 # Формируем список параметров в читаемом виде
-                params_list = ', '.join(required_params) if required_params else 'нет обязательных параметров'
+                params_list = ', '.join(all_params) if all_params else 'нет параметров'
                 
                 tool_info = f"- {tool_name}\n  - описание: {tool_description}\n  - параметры: {params_list}"
                 tools_by_server[server].append(tool_info)
