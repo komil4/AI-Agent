@@ -93,7 +93,7 @@ class MCPClient:
         try:
             if server_name in self.servers:
                 server = self.servers[server_name]
-                return await server.call_tool(tool_name, params)
+                return server.call_tool(tool_name, params)
             else:
                 return {
                     'error': f'Сервер {server_name} не подключен',
@@ -112,7 +112,7 @@ class MCPClient:
         try:
             if server_name in self.builtin_servers:
                 server = self.builtin_servers[server_name]
-                return await server.call_tool(tool_name, params)
+                return server.call_tool(tool_name, params)
             else:
                 return {
                     'error': f'Встроенный сервер {server_name} не найден',
