@@ -65,15 +65,24 @@ class IntelligentToolProcessor:
             
             logger.info(f"🧠 Начинаем интеллектуальную обработку: '{user_message[:50]}...'")
             
-            # Шаг 1: Извлекаем параметры из контекста
-            context_params = await self._extract_context_parameters(
+            # Шаг 1: Извлекаем параметры из контекста и получаем инструменты, найденные LLM
+            context_params, llm_found_tools = await self._extract_context_parameters(
                 user_message, chat_history, user_context, available_tools
             )
             
             # Шаг 2: Определяем подходящий инструмент
-            selected_tool = await self._select_best_tool(
-                user_message, available_tools, context_params
-            )
+            # Если LLM нашел инструменты, выбираем лучший из них
+            if llm_found_tools:
+                logger.info(f"🎯 LLM предложил {len(llm_found_tools)} инструментов, выбираем лучший")
+                selected_tool = await self._select_best_tool_from_candidates(
+                    user_message, llm_found_tools, context_params
+                )
+            else:
+                # Если LLM не нашел инструменты, используем старую логику
+                logger.info("🔍 LLM не нашел инструменты, используем общий поиск")
+                selected_tool = await self._select_best_tool(
+                    user_message, available_tools, context_params
+                )
             
             if not selected_tool:
                 return "Извините, не удалось найти подходящий инструмент для выполнения вашего запроса."
@@ -95,7 +104,7 @@ class IntelligentToolProcessor:
         chat_history: List[Dict[str, Any]], 
         user_context: Dict[str, Any],
         available_tools: List[Dict[str, Any]]
-    ) -> List[ContextParameter]:
+    ) -> Tuple[List[ContextParameter], List[Dict[str, Any]]]:
         """
         Извлекает параметры из контекста (приоритет последнему сообщению)
         
@@ -106,7 +115,7 @@ class IntelligentToolProcessor:
             available_tools: Доступные инструменты
             
         Returns:
-            Список извлеченных параметров
+            Кортеж: (список извлеченных параметров, список найденных инструментов)
         """
         context_params = []
         
@@ -310,11 +319,23 @@ class IntelligentToolProcessor:
                 )
             
             logger.info(f"✅ Извлечено {len(context_params)} параметров из контекста")
-            return context_params
+            
+            # Находим инструменты, которые были найдены LLM
+            found_tools_objects = []
+            if found_tools:
+                for tool_name in found_tools:
+                    for tool in available_tools:
+                        if tool.get('name') == tool_name:
+                            found_tools_objects.append(tool)
+                            break
+                
+                logger.info(f"🛠️ LLM нашел инструменты: {[t.get('name') for t in found_tools_objects]}")
+            
+            return context_params, found_tools_objects
             
         except Exception as e:
             logger.error(f"❌ Ошибка извлечения параметров: {e}")
-            return []
+            return [], []
             
     def _extract_missing_optional_params(
         self, 
@@ -488,6 +509,136 @@ class IntelligentToolProcessor:
         except Exception as e:
             logger.error(f"❌ Ошибка выбора инструмента: {e}")
             return None
+            
+    async def _select_best_tool_from_candidates(
+        self, 
+        user_message: str, 
+        candidate_tools: List[Dict[str, Any]], 
+        context_params: List[ContextParameter]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Выбирает лучший инструмент из кандидатов, предложенных LLM
+        
+        Args:
+            user_message: Сообщение пользователя
+            candidate_tools: Инструменты, предложенные LLM
+            context_params: Извлеченные параметры
+            
+        Returns:
+            Выбранный инструмент или None
+        """
+        try:
+            if not candidate_tools:
+                return None
+            
+            # Если только один инструмент, возвращаем его
+            if len(candidate_tools) == 1:
+                logger.info(f"✅ Выбран единственный инструмент от LLM: {candidate_tools[0].get('name')}")
+                return candidate_tools[0]
+            
+            # Если несколько инструментов, выбираем лучший по параметрам
+            logger.info(f"🔍 Выбираем лучший из {len(candidate_tools)} инструментов от LLM")
+            
+            best_tool = self._select_tool_by_parameters(candidate_tools, context_params, user_message)
+            if best_tool:
+                logger.info(f"✅ Выбран лучший инструмент от LLM: {best_tool.get('name')}")
+                return best_tool
+            
+            # Если не удалось выбрать по параметрам, используем LLM для выбора из кандидатов
+            logger.info("🤖 Используем LLM для выбора из кандидатов")
+            return await self._select_tool_with_llm_from_candidates(user_message, candidate_tools, context_params)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка выбора инструмента из кандидатов: {e}")
+            return None
+    
+    async def _select_tool_with_llm_from_candidates(
+        self, 
+        user_message: str, 
+        candidate_tools: List[Dict[str, Any]], 
+        context_params: List[ContextParameter]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Использует LLM для выбора инструмента из кандидатов
+        """
+        try:
+            # Формируем информацию об инструментах-кандидатах
+            tools_info = []
+            for tool in candidate_tools:
+                tool_name = tool.get('name', '')
+                tool_description = tool.get('description', '')
+                input_schema = tool.get('inputSchema', {})
+                all_params = list(input_schema.get('properties', {}).keys())
+                required_params = input_schema.get('required', [])
+                
+                params_info = f"всего: {len(all_params)}, обязательных: {len(required_params)}"
+                tools_info.append(f"- {tool_name}: {tool_description} (параметры: {params_info})")
+            
+            tools_text = "\n".join(tools_info)
+            
+            # Формируем параметры для отображения
+            params_text = ""
+            if context_params:
+                params_list = [f"{p.name}={p.value}" for p in context_params]
+                params_text = f"Найденные параметры: {', '.join(params_list)}"
+            
+            system_message = f"""Ты - эксперт по выбору инструментов. Из предложенных кандидатов выбери лучший инструмент для задачи пользователя.
+
+КАНДИДАТЫ (инструменты, которые LLM уже выбрал как подходящие):
+{tools_text}
+
+{params_text}
+
+ЗАДАЧА: Выбери ОДИН лучший инструмент из кандидатов выше.
+
+ФОРМАТ ОТВЕТА (только JSON):
+{{
+    "selected_tool": "имя_инструмента",
+    "reason": "краткое_объяснение_почему_этот_инструмент_лучший"
+}}
+
+ВАЖНО: Отвечай только в JSON формате! Выбирай ТОЛЬКО из кандидатов выше!"""
+
+            messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message}
+            ]
+            
+            response = await self.llm_client.llm_provider.generate_response(messages)
+            
+            # Парсим ответ
+            try:
+                cleaned_response = response.strip()
+                json_start = cleaned_response.find('{')
+                json_end = cleaned_response.rfind('}') + 1
+                
+                if json_start != -1 and json_end > json_start:
+                    json_str = cleaned_response[json_start:json_end]
+                    selection_data = json.loads(json_str)
+                    
+                    selected_tool_name = selection_data.get('selected_tool', '')
+                    reason = selection_data.get('reason', '')
+                    
+                    # Находим выбранный инструмент среди кандидатов
+                    for tool in candidate_tools:
+                        if tool.get('name') == selected_tool_name:
+                            logger.info(f"✅ LLM выбрал из кандидатов: {selected_tool_name} (причина: {reason})")
+                            return tool
+                    
+                    logger.warning(f"⚠️ LLM выбрал несуществующий инструмент из кандидатов: {selected_tool_name}")
+                    # Возвращаем первый кандидат как fallback
+                    return candidate_tools[0]
+                else:
+                    logger.warning("⚠️ JSON не найден в ответе LLM при выборе из кандидатов")
+                    return candidate_tools[0]
+                    
+            except json.JSONDecodeError as e:
+                logger.warning(f"⚠️ Не удалось распарсить выбор из кандидатов: {e}")
+                return candidate_tools[0]
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка выбора инструмента через LLM из кандидатов: {e}")
+            return candidate_tools[0] if candidate_tools else None
     
     def _select_tool_by_parameters(
         self, 
